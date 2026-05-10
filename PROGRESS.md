@@ -49,12 +49,24 @@ Step 1 of 9 in the roadmap from [PROJECT_BRIEF.md](PROJECT_BRIEF.md):
 
 **Phase 2: Google Cloud project + service account for Sheets API access.**
 
+Decisions locked this session:
+- Fresh GCP project (NOT reusing the AMMS HR-dashboard project) — clean separation between the two Pertinence apps.
+- Owned by a Pertinence org Google account (NOT Shawn's personal account) — project survives Shawn's departure / SIWES end.
+
 Next session entry points:
-1. Create Google Cloud project (or reuse an existing one) and enable the Google Sheets API
-2. Create a service account, download its JSON key, store the email + key safely (likely as Supabase Edge Function secrets)
-3. Share each of the four source sheets (Marketing Fund Expense, Bank Deposit Mirror, Customer Support Master, Marketing Team Reporting Template) with the service account email as Viewer
-4. Smoke-test access: a tiny `pnpm` script that reads one tab via the service-account creds, just to confirm the auth path works before any Edge Function code is written
-5. Then Phase 3: Bank Deposit ingest Edge Function (cleanest source, most important — the financial source of truth)
+1. Log into https://console.cloud.google.com with the Pertinence org account
+2. Create a new project named `pertinence-dashboard` (or whatever the supervisor approves)
+3. Enable the Google Sheets API on that project
+4. Create a service account inside the project (suggested name: `dashboard-sheets-reader`); no project-level IAM role needed — sheet-by-sheet sharing is what grants access
+5. Download a JSON key for the service account; store the email + private_key in `.env.local` for the smoke test, eventually as Supabase Edge Function secrets (`SHEETS_SERVICE_ACCOUNT_EMAIL`, `SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY`) for production
+6. Share each of the four source sheets with the service account email as Viewer:
+   - Marketing Fund Expense Sheet
+   - Bank Deposit Mirror
+   - Customer Support Master Sheet
+   - Marketing Team Reporting Template (Realtor Managers Weekly Report tab)
+7. Paste the four sheet IDs (the long string in each sheet URL between `/d/` and `/edit`) so they can be wired up in code
+8. Smoke-test: tiny Node script using `googleapis` that reads a few rows from one tab to confirm the auth path works before any Edge Function code is written
+9. Then Phase 3: Bank Deposit ingest Edge Function (cleanest source, most important — the financial source of truth). Note: Edge Functions run on Deno, so the Phase-3 code will use Deno-compatible auth (`npm:googleapis` import or a lightweight JWT-signing approach) rather than the Node `googleapis` package the smoke test uses.
 
 ## Next checkpoint
 
@@ -72,6 +84,6 @@ From [PROJECT_BRIEF.md](PROJECT_BRIEF.md) "Open items still needing supervisor c
 
 ## Open items waiting on Shawn
 
-- [ ] Pick / create the Google Cloud project that will own the Sheets-API service account (Phase 2 kickoff).
-- [ ] Decide where the service-account JSON key lives — likely as Supabase Edge Function secrets (`SHEETS_SERVICE_ACCOUNT_EMAIL`, `SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY`); confirm before provisioning.
+- [ ] Confirm access to a Pertinence org Google account that can create new GCP projects (or coordinate with whoever owns Pertinence's Google Workspace) before next session.
+- [ ] After service account is created, paste the four source-sheet IDs into the next session (between `/d/` and `/edit` in each Google Sheets URL).
 - [ ] Clean up the test user (`delete from auth.users where email = '<test email>';` — cascade-deletes the profile row) once Phase 2 starts, so the only remaining account is your real admin.
