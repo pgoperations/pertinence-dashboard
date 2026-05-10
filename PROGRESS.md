@@ -4,7 +4,7 @@ A session-by-session narrative of what's been built, what's in flight, and what'
 
 ## Status
 
-**Phase 1 — Schema foundation: migrations 001–008 applied.** Migration 008 patched a bootstrap bug in the role-change trigger that surfaced when promoting the first admin. Ready to move to Phase 2 (Google Sheets service account + ingestion Edge Functions).
+**Phase 2 — Google Sheets auth path verified (3 of 4 sheets shared).** GCP project, service account, and read-only smoke test all green. Bank Deposit Mirror sharing blocked on supervisor permission (Shawn requesting tomorrow). Once Bank Deposit is shared, Phase 3 (ingest Edge Functions) can start.
 
 ## Build order overview
 
@@ -45,32 +45,30 @@ Step 1 of 9 in the roadmap from [PROJECT_BRIEF.md](PROJECT_BRIEF.md):
 
 - **2026-05-10** — Phase 1 complete. Migrations 001–008 applied to live Supabase project (`hrmrqpkcvyjwxrehrgvq`) via the dashboard SQL editor. First-admin promotion exposed a bootstrap bug: the `prevent_role_self_change` trigger in migration 003 blocked the very first role assignment because `is_admin()` returns false when no admin exists yet (and `auth.uid()` is null in the SQL editor's postgres-role context). Fixed in migration 008 by short-circuiting the trigger when `auth.uid() is null` — that's only ever true for trusted server-side contexts since anon clients are filtered by the existing profiles RLS policies before the trigger runs. Smoke test passed: test user signed up via dashboard → `handle_new_user` trigger created profile row with `role='viewer'` → promotion to admin succeeded after 008. Public signup disabled in dashboard (Auth → Sign In / Up).
 
+- **2026-05-10** — Phase 2 partial: Google Cloud + service account + Sheets auth path verified.
+  - GCP project `pertinence-dashboard` created on the Pertinence Group Google account (clean project ID, no numeric suffix — name was free).
+  - Google Sheets API enabled on the project.
+  - Service account `dashboard-sheets-reader@pertinence-dashboard.iam.gserviceaccount.com` created with no project-level IAM role (sheet-by-sheet sharing handles auth — more secure).
+  - JSON key downloaded, stored outside the repo. `SHEETS_SERVICE_ACCOUNT_EMAIL` + `SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY` set in `.env.local`.
+  - 3 of 4 source sheets shared with the service account as Viewer + IDs captured in `.env.local`:
+    - Marketing Fund Expense Sheet — `SHEET_ID_MARKETING_EXPENSE`
+    - MASTER SHEET- CUSTOMER SUPPORT — `SHEET_ID_CUSTOMER_SUPPORT`
+    - Marketing Team Reporting Template — `SHEET_ID_REALTOR_MANAGERS_WEEKLY`
+  - **Bank Deposit Mirror NOT shared yet** — Shawn lacks edit access, requesting supervisor permission tomorrow.
+  - `scripts/smoke-test-sheets.mjs` created — Node `googleapis`-based reader, run via `pnpm smoke:sheets`. Reads `A1:F5` from the first tab of Marketing Fund Expense. Confirmed green: returned 5 rows with the expected Income/Expenditure structure (first tab is "Petty Cash Book September" from 2022 — the sheet has history back further than 2026; the ingest will need to handle the full tab list and filter by period name).
+  - Note for Phase 3: Edge Functions run on Deno, so the production ingest code will use a Deno-compatible auth approach (lightweight JWT signing or `npm:googleapis` import), not the Node `googleapis` package this smoke test uses.
+
 ## Current focus
 
-**Phase 2: Google Cloud project + service account for Sheets API access.**
-
-Decisions locked this session:
-- Fresh GCP project (NOT reusing the AMMS HR-dashboard project) — clean separation between the two Pertinence apps.
-- Owned by a Pertinence org Google account (NOT Shawn's personal account) — project survives Shawn's departure / SIWES end.
-
-Next session entry points:
-1. Log into https://console.cloud.google.com with the Pertinence org account
-2. Create a new project named `pertinence-dashboard` (or whatever the supervisor approves)
-3. Enable the Google Sheets API on that project
-4. Create a service account inside the project (suggested name: `dashboard-sheets-reader`); no project-level IAM role needed — sheet-by-sheet sharing is what grants access
-5. Download a JSON key for the service account; store the email + private_key in `.env.local` for the smoke test, eventually as Supabase Edge Function secrets (`SHEETS_SERVICE_ACCOUNT_EMAIL`, `SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY`) for production
-6. Share each of the four source sheets with the service account email as Viewer:
-   - Marketing Fund Expense Sheet
-   - Bank Deposit Mirror
-   - Customer Support Master Sheet
-   - Marketing Team Reporting Template (Realtor Managers Weekly Report tab)
-7. Paste the four sheet IDs (the long string in each sheet URL between `/d/` and `/edit`) so they can be wired up in code
-8. Smoke-test: tiny Node script using `googleapis` that reads a few rows from one tab to confirm the auth path works before any Edge Function code is written
-9. Then Phase 3: Bank Deposit ingest Edge Function (cleanest source, most important — the financial source of truth). Note: Edge Functions run on Deno, so the Phase-3 code will use Deno-compatible auth (`npm:googleapis` import or a lightweight JWT-signing approach) rather than the Node `googleapis` package the smoke test uses.
+**Blocked on Bank Deposit Mirror sharing.** Once Shawn has edit access tomorrow, the unblock sequence is:
+1. Share Bank Deposit Mirror with `dashboard-sheets-reader@pertinence-dashboard.iam.gserviceaccount.com` as Viewer.
+2. Add `SHEET_ID_BANK_DEPOSIT=<id>` to `.env.local`.
+3. Optional re-run of smoke test against the Bank Deposit sheet (set `SMOKE_TEST_SHEET_ID` to its ID and `SMOKE_TEST_RANGE` to something like `2026 LAND!A1:K5`) to confirm access.
+4. Start Phase 3: Bank Deposit ingest Edge Function — cleanest source, most important, drives the ingest pattern that the other sources will follow.
 
 ## Next checkpoint
 
-Service account provisioned, all four source sheets shared, read-access smoke test green. After that we move into Edge Function code for the first ingest (Bank Deposit).
+Bank Deposit shared, smoke-tested if useful, then the first ingest Edge Function (Bank Deposit) written + deployed + producing rows in `bank_deposits` with proper `source_row_id` idempotency.
 
 ## Open items waiting on supervisor
 
@@ -84,6 +82,5 @@ From [PROJECT_BRIEF.md](PROJECT_BRIEF.md) "Open items still needing supervisor c
 
 ## Open items waiting on Shawn
 
-- [ ] Confirm access to a Pertinence org Google account that can create new GCP projects (or coordinate with whoever owns Pertinence's Google Workspace) before next session.
-- [ ] After service account is created, paste the four source-sheet IDs into the next session (between `/d/` and `/edit` in each Google Sheets URL).
-- [ ] Clean up the test user (`delete from auth.users where email = '<test email>';` — cascade-deletes the profile row) once Phase 2 starts, so the only remaining account is your real admin.
+- [ ] Get edit access on Bank Deposit Mirror from supervisor tomorrow, then share with the service account email and add its ID to `.env.local` as `SHEET_ID_BANK_DEPOSIT`.
+- [ ] Clean up the test user (`delete from auth.users where email = '<test email>';` — cascade-deletes the profile row), so the only remaining account is your real admin.
