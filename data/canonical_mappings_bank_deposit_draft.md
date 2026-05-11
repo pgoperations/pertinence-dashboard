@@ -1,6 +1,6 @@
 # Canonical mapping draft — Bank Deposit (`2026 LAND`)
 
-**Status: supervisor-approved 2026-05-11.** Final canonical: **20 PURPOSE** + **24 LOCATION**. One sub-question opened by the Q2 answer is **outstanding** — see "Outstanding" below; resolving it is the only thing blocking migration 009.
+**Status: fully supervisor-approved 2026-05-11.** Final canonical: **20 PURPOSE** + **24 LOCATION**. The Security/Clearing sub-question was resolved by collapsing both `SECURITY FEE` and `SECURITY FEE / CLEARING FEE` source rows into a single canonical **"Security Fee"** for this 2026 instance, while keeping **"Clearing Fee"** as a distinct canonical for future Clearing-only rows (`CLEARANCE FEE` pre-seeded as alias). Migration 009 written: [supabase/migrations/20260511000009_seed_canonicals.sql](../supabase/migrations/20260511000009_seed_canonicals.sql).
 
 ## Supervisor decisions (2026-05-11)
 
@@ -11,16 +11,11 @@
 - **Lavida Prime vs Lavida Hills:** **different** locations. Confirmed as drafted.
 - **Boystown:** one word. Confirmed as drafted.
 
-## Outstanding (blocks migration 009)
+## Resolved 2026-05-11 — Security/Clearing mapping
 
-The supervisor confirmed Security Fee and Clearing Fee are distinct, but there's exactly one source row labelled `SECURITY FEE / CLEARING FEE` (1 occurrence) — one transaction where both were paid together. How should that row map?
+The supervisor's direction (final): Security Fee and Clearing Fee are **conceptually distinct** charges going forward, but in the current 2026 sheet there are exactly two related rows — one labelled `SECURITY FEE` and one labelled `SECURITY FEE / CLEARING FEE` — and both should be **treated as the same entity for this instance**. Resolution: both source variants alias to canonical **"Security Fee"**. Canonical **"Clearing Fee"** is created as a separate row (no source aliases from 2026 yet, but `CLEARANCE FEE` is pre-seeded as an alias per supervisor's spelling preference) so that future Clearing-only transactions land in their own bucket without a schema change.
 
-Options to take to the supervisor next session:
-- **(a)** Map it arbitrarily to one (e.g. Security Fee) and add a `combined_with_clearing_fee=true` quality_flag.
-- **(b)** Add a third canonical "Security & Clearing Fee (combined)" with this one variant as alias.
-- **(c)** Treat the combined row as a data-quality alert (`split_required` flag) so the supervisor manually re-enters it on the source sheet as two rows.
-
-My recommendation: **(b)** — preserves the source-row-id idempotency we built into the schema, doesn't lose data, and surfaces the ambiguity in the location/purpose breakdown panel rather than hiding it in a flag.
+Final purpose count: **20 canonical** (Security Fee absorbs the combined row; Clearing Fee is separate; no third "combined" canonical).
 
 ---
 
@@ -30,7 +25,7 @@ The canonical names become the rows in our `locations` and `purposes` reference 
 
 ---
 
-## PURPOSE — 27 source variants → 19 proposed canonical
+## PURPOSE — 27 source variants → 20 canonical (final)
 
 | # | Proposed canonical | Source variants (count) | Notes |
 | - | ------------------ | ----------------------- | ----- |
@@ -48,13 +43,12 @@ The canonical names become the rows in our `locations` and `purposes` reference 
 | 12 | Allocation Fee | `ALLOCATION FEE` (5) | |
 | 13 | Change of Ownership | `CHANGE OF OWNERSHIP` (33), `CHANGE OF OWNERSHIP FEE` (1) | |
 | 14 | Business Rep Registration | `BUSINESS REP. REG.` (1), `BUSINESS REP. REG` (1), `BUSINESS RE. REG` (1), `BUSINESS RE. REG.` (1) | All 4 look like the same thing — confirm? |
-| 15 | Security Fee | `SECURITY FEE` (1) | Split per supervisor Q2 (2026-05-11). |
-| 15b | Clearing Fee | *(no exact source variant)* | Canonical exists for future rows; will not match any 2026 data until a `CLEARING FEE` row appears. |
-| 15c | *(unresolved)* | `SECURITY FEE / CLEARING FEE` (1) | **Outstanding**: combined-row mapping decision pending — see top of doc. |
-| 16 | Client Deposit | `CLIENT DEPOSIT` (2) | |
-| 17 | Property Flex | `PROPERTY FLEX` (2) | |
-| 18 | Default Charge | `DEFAULT CHARGE` (2) | |
-| 19 | Book Purchase | `BOOK PURCHASE` (1) | |
+| 15 | Security Fee | `SECURITY FEE` (1), `SECURITY FEE / CLEARING FEE` (1) | Resolved 2026-05-11 — both rows treated as same entity for 2026. |
+| 16 | Clearing Fee | `CLEARANCE FEE` (pre-seeded, no 2026 source match yet) | Canonical exists for future Clearing-only rows; `CLEARANCE FEE` pre-seeded per supervisor spelling preference. |
+| 17 | Client Deposit | `CLIENT DEPOSIT` (2) | |
+| 18 | Property Flex | `PROPERTY FLEX` (2) | |
+| 19 | Default Charge | `DEFAULT CHARGE` (2) | |
+| 20 | Book Purchase | `BOOK PURCHASE` (1) | |
 
 ---
 
@@ -91,7 +85,6 @@ The canonical names become the rows in our `locations` and `purposes` reference 
 
 ## Next steps
 
-1. Resolve the outstanding combined-row mapping for `SECURITY FEE / CLEARING FEE` with the supervisor (see "Outstanding" at top).
-2. Write migration 009 — seed `locations` + `location_aliases` + `purposes` + `purpose_aliases` from this approved list (24 locations, 20 purposes, plus the alias rows).
-3. Apply migration 009 on the live Supabase project.
-4. Then Phase 3: Bank Deposit ingest Edge Function — the canonical lookup is now ready, so the ingest can match incoming `PURPOSE` + `LOCATION` values via the alias tables on first read.
+1. ~~Write migration 009 — seed `locations` + `location_aliases` + `purposes` + `purpose_aliases` from this approved list (24 locations, 20 purposes, plus the alias rows).~~ Done 2026-05-11.
+2. ~~Apply migration 009 on the live Supabase project.~~ Done 2026-05-11; counts verified (24 / 24 / 20 / 28).
+3. Phase 3: Bank Deposit ingest Edge Function — canonical lookup is now ready, so the ingest can match incoming `PURPOSE` + `LOCATION` values via the alias tables on first read.

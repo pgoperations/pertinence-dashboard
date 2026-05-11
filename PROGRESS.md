@@ -4,7 +4,7 @@ A session-by-session narrative of what's been built, what's in flight, and what'
 
 ## Status
 
-**Phase 2 complete + canonical mappings supervisor-approved 2026-05-11.** All blockers cleared except one residual sub-question (the single `SECURITY FEE / CLEARING FEE` combined row — see `data/canonical_mappings_bank_deposit_draft.md` "Outstanding"). Next session: resolve that, write migration 009 to seed `locations` / `purposes` / `*_aliases` from the approved 24 locations + 20 purposes, apply it, then start Phase 3 (Bank Deposit ingest Edge Function).
+**Phase 2 complete + canonical reference data seeded.** Migration 009 written, supervisor-approved, applied to live Supabase (`hrmrqpkcvyjwxrehrgvq`) 2026-05-11. Counts verified: 24 locations / 24 location_aliases / 20 purposes / 28 purpose_aliases. Next session: start Phase 3 — scaffold `supabase/functions/ingest-bank-deposit/` (Deno-compatible JWT sign, read `2026 LAND`, upsert into `bank_deposits` keyed on `(source_sheet, source_tab, source_row_id)`, emit quality flags for any unmatched purpose/location, refresh `sales_by_location_monthly`).
 
 ## Build order overview
 
@@ -67,23 +67,27 @@ Step 1 of 9 in the roadmap from [PROJECT_BRIEF.md](PROJECT_BRIEF.md):
 
 - **2026-05-11** — Canonical mapping drafted, sent to supervisor, returned approved:
   - `scripts/dump-bank-deposit-canonicals.mjs` + `pnpm dump:canonicals` extract unique PURPOSE + LOCATION values from `2026 LAND` (601 data rows scanned).
-  - `data/canonical_mappings_bank_deposit_draft.md` is the supervisor-review doc; final approved list = **20 PURPOSE canonical** (27 raw variants in; OUTRIGHT family collapsed to one, BUSINESS REP REG punctuation variants collapsed, Security Fee + Clearing Fee split into two) + **24 LOCATION canonical** (24 raw variants, no merges — Ire Mowe vs Ire Mowe Extension and Lavida Hills vs Lavida Prime both confirmed distinct).
-  - **One outstanding sub-question** before migration 009 can be written: how to map the single `SECURITY FEE / CLEARING FEE` combined source row now that the two charges are canonically distinct. Recommendation captured in the draft doc: add a third canonical "Security & Clearing Fee (combined)" with that one variant as its sole alias — preserves source-row-id idempotency and surfaces the ambiguity rather than hiding it.
+  - `data/canonical_mappings_bank_deposit_draft.md` is the supervisor-review doc; final approved canonical list locked at **20 PURPOSE** (27 raw variants in) + **24 LOCATION** (24 raw variants, no merges — Ire Mowe vs Ire Mowe Extension and Lavida Hills vs Lavida Prime confirmed distinct).
+  - Security/Clearing sub-question resolved same day: Security Fee and Clearing Fee are conceptually distinct canonicals, but both 2026 source rows (`SECURITY FEE` and `SECURITY FEE / CLEARING FEE`) alias to "Security Fee" — treated as the same entity for this instance. Clearing Fee canonical created with no source-data alias yet; `CLEARANCE FEE` pre-seeded per supervisor spelling preference.
+
+- **2026-05-11** — Migration 009 written and applied (`20260511000009_seed_canonicals.sql`):
+  - Seeds `locations`, `location_aliases`, `purposes`, `purpose_aliases` from the approved list. Idempotent: `on conflict (name) do nothing` on canonicals, `on conflict (lower(alias)) do nothing` on aliases, alias FKs resolved via join on `name`.
+  - Applied via Supabase SQL editor on the live project. Verification query returned `locations=24, location_aliases=24, purposes=20, purpose_aliases=28` — counts match exactly. Phase 2 fully closed.
 
 ## Current focus
 
-**Write migration 009 to seed `locations` / `location_aliases` / `purposes` / `purpose_aliases` from the supervisor-approved canonical list.** One sub-question (the `SECURITY FEE / CLEARING FEE` combined row) is open and needs the supervisor's call before the seed is final — recommendation already captured in `data/canonical_mappings_bank_deposit_draft.md`. Once that's resolved and migration 009 is applied, start Phase 3 (Bank Deposit ingest Edge Function).
+**Phase 3: Bank Deposit ingest Edge Function.** Canonical lookup is now ready (alias tables seeded), so the ingest can match incoming PURPOSE + LOCATION values on first read. Function lives at `supabase/functions/ingest-bank-deposit/` and needs: Deno-compatible JWT sign for Google Sheets API (the Node `googleapis` package in the smoke script doesn't run on Deno), read `2026 LAND` using the named-column constants from DESIGN_DECISIONS.md (column A `DATE`, column I `CLIENT  NAME` with the intentional double space, skip columns L/M), upsert into `bank_deposits` keyed on `(source_sheet, source_tab, source_row_id)`, emit quality flags (`unknown_purpose`, `unknown_location`, `null_sales_person`, `unparseable_date`) for any unmatched values, then refresh `sales_by_location_monthly`.
 
 ## Next-session entry points
 
-1. Ask supervisor: how to map the single `SECURITY FEE / CLEARING FEE` source row (recommended option (b) — third canonical "Security & Clearing Fee (combined)" — is in the draft doc).
-2. Write `supabase/migrations/20260511000009_seed_canonicals.sql` — INSERT 24 locations + 20 (or 21 if option (b)) purposes + the alias rows. Idempotent (`on conflict do nothing`).
-3. Apply migration 009 via Supabase SQL editor.
-4. Verify with `select count(*) from public.locations` etc.
-5. Then Phase 3 entry: scaffold `supabase/functions/ingest-bank-deposit/` — Deno-compatible JWT sign, read `2026 LAND`, upsert into `bank_deposits` keyed on `(source_sheet, source_tab, source_row_id)`, emit quality flags for any unmatched purpose/location, refresh `sales_by_location_monthly`.
+1. Decide the Deno-compatible Sheets auth approach: hand-rolled `jose`-based JWT sign vs. `npm:googleapis` import. Hand-rolled is the leaner option for a service-account-only flow; capture decision in DESIGN_DECISIONS.md before coding.
+2. Scaffold `supabase/functions/ingest-bank-deposit/index.ts` + `_shared/sheetsAuth.ts` + `_shared/canonicalLookup.ts` (loads alias maps from DB once per invocation).
+3. Wire the named-column constants from DESIGN_DECISIONS.md (column A `DATE`, column I `CLIENT  NAME` with double space, skip L/M).
+4. Upsert path: dedupe by `(source_sheet, source_tab, source_row_id)`; preserve `raw_row` jsonb; emit `quality_flags`.
+5. Smoke test against `2026 LAND` and spot-check a known transaction (e.g. the OJ Awumi rows the boss referenced).
+6. Trigger `sales_by_location_monthly` refresh inside the same function (single transaction).
 
 ## Open items waiting on supervisor
 
-- [ ] Decide how to map the single `SECURITY FEE / CLEARING FEE` combined source row.
 - [ ] Add `Category` dropdown column to Marketing Fund Expense source sheet (supervisor agreed 2026-05-11; awaiting actual addition).
 - [ ] Create 2026 tab in Marketing Team Reporting Template — Realtor Managers Weekly Report (supervisor agreed 2026-05-11; awaiting actual creation).
