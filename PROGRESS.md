@@ -4,7 +4,7 @@ A session-by-session narrative of what's been built, what's in flight, and what'
 
 ## Status
 
-**Phase 2 complete + Bank Deposit `2026 LAND` schema resolved with supervisor (2026-05-11).** Column A is the real transaction date; columns L and M are out of scope; `CLIENT  NAME` double-space is intentional. Next: draft canonical `locations` + `purposes` mappings from the live data for supervisor review, then Phase 3 (Bank Deposit ingest Edge Function).
+**Phase 2 complete + canonical mappings supervisor-approved 2026-05-11.** All blockers cleared except one residual sub-question (the single `SECURITY FEE / CLEARING FEE` combined row — see `data/canonical_mappings_bank_deposit_draft.md` "Outstanding"). Next session: resolve that, write migration 009 to seed `locations` / `purposes` / `*_aliases` from the approved 24 locations + 20 purposes, apply it, then start Phase 3 (Bank Deposit ingest Edge Function).
 
 ## Build order overview
 
@@ -65,16 +65,25 @@ Step 1 of 9 in the roadmap from [PROJECT_BRIEF.md](PROJECT_BRIEF.md):
   - 2026 tab in Marketing Team Reporting Template: supervisor agreed to create it.
   - Test user deleted from `auth.users` — only the real admin remains.
 
+- **2026-05-11** — Canonical mapping drafted, sent to supervisor, returned approved:
+  - `scripts/dump-bank-deposit-canonicals.mjs` + `pnpm dump:canonicals` extract unique PURPOSE + LOCATION values from `2026 LAND` (601 data rows scanned).
+  - `data/canonical_mappings_bank_deposit_draft.md` is the supervisor-review doc; final approved list = **20 PURPOSE canonical** (27 raw variants in; OUTRIGHT family collapsed to one, BUSINESS REP REG punctuation variants collapsed, Security Fee + Clearing Fee split into two) + **24 LOCATION canonical** (24 raw variants, no merges — Ire Mowe vs Ire Mowe Extension and Lavida Hills vs Lavida Prime both confirmed distinct).
+  - **One outstanding sub-question** before migration 009 can be written: how to map the single `SECURITY FEE / CLEARING FEE` combined source row now that the two charges are canonically distinct. Recommendation captured in the draft doc: add a third canonical "Security & Clearing Fee (combined)" with that one variant as its sole alias — preserves source-row-id idempotency and surfaces the ambiguity rather than hiding it.
+
 ## Current focus
 
-**Draft canonical `locations` + `purposes` mappings from the live Bank Deposit data so the supervisor can review them.** Migration 002 ships the `locations` / `location_aliases` / `purposes` / `purpose_aliases` tables empty by design — they only get seeded after supervisor approval. Once approved, write migration 009 with the seed rows and then start Phase 3 (Bank Deposit ingest Edge Function).
+**Write migration 009 to seed `locations` / `location_aliases` / `purposes` / `purpose_aliases` from the supervisor-approved canonical list.** One sub-question (the `SECURITY FEE / CLEARING FEE` combined row) is open and needs the supervisor's call before the seed is final — recommendation already captured in `data/canonical_mappings_bank_deposit_draft.md`. Once that's resolved and migration 009 is applied, start Phase 3 (Bank Deposit ingest Edge Function).
 
-## Next checkpoint
+## Next-session entry points
 
-Canonical mapping drafts produced + sent to supervisor; then first ingest Edge Function (Bank Deposit) written + deployed + producing rows in `bank_deposits` with proper `source_row_id` idempotency.
+1. Ask supervisor: how to map the single `SECURITY FEE / CLEARING FEE` source row (recommended option (b) — third canonical "Security & Clearing Fee (combined)" — is in the draft doc).
+2. Write `supabase/migrations/20260511000009_seed_canonicals.sql` — INSERT 24 locations + 20 (or 21 if option (b)) purposes + the alias rows. Idempotent (`on conflict do nothing`).
+3. Apply migration 009 via Supabase SQL editor.
+4. Verify with `select count(*) from public.locations` etc.
+5. Then Phase 3 entry: scaffold `supabase/functions/ingest-bank-deposit/` — Deno-compatible JWT sign, read `2026 LAND`, upsert into `bank_deposits` keyed on `(source_sheet, source_tab, source_row_id)`, emit quality flags for any unmatched purpose/location, refresh `sales_by_location_monthly`.
 
 ## Open items waiting on supervisor
 
-- [ ] Approve canonical `locations` + `purposes` mappings (draft in progress, pulled from live `2026 LAND` data).
+- [ ] Decide how to map the single `SECURITY FEE / CLEARING FEE` combined source row.
 - [ ] Add `Category` dropdown column to Marketing Fund Expense source sheet (supervisor agreed 2026-05-11; awaiting actual addition).
 - [ ] Create 2026 tab in Marketing Team Reporting Template — Realtor Managers Weekly Report (supervisor agreed 2026-05-11; awaiting actual creation).
