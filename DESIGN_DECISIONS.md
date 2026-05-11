@@ -33,3 +33,9 @@ Three roles on a `profiles` table extending `auth.users`: `admin`, `editor`, `vi
 - Mobile-readable (supervisor checks on phone).
 - Currency: `numeric(15,2)`. Never float for money.
 - Fuzzy name matching uses configurable threshold; below-threshold matches go to "needs review", never auto-merge.
+
+## Ingest Edge Function rules (Phase 3 onward, locked 2026-05-11)
+- **Google Sheets auth: native Deno `crypto.subtle`, no external lib.** Hand-roll the RS256 JWT sign + `urn:ietf:params:oauth:grant-type:jwt-bearer` token exchange. Service-account-only flow, zero deps, smallest cold-start. Smoke script (`scripts/smoke-test-sheets.mjs`) keeps using Node `googleapis` — that's local-only.
+- **Sheets read uses `valueRenderOption=UNFORMATTED_VALUE`.** Dates come back as serial numbers (days since 1899-12-30 epoch), amounts as numbers. Eliminates locale ambiguity on `M/D/YYYY` vs `D/M/YYYY` and string-vs-number coercion on amounts.
+- **`source_row_id` for Bank Deposit: `TRANS CODE` (column H) when non-empty, else fallback `row-{N}` where N is the 1-indexed sheet row.** TRANS CODE survives row reordering; the fallback covers blank cells. Inspectable via `source_row_id like 'row-%'`.
+- **Aggregate refresh is a Postgres function, called via RPC at the end of each ingest run.** `refresh_sales_by_location_monthly()` (and future siblings) recomputes the aggregate from the fact table inside a single SQL statement, so ingest + refresh stay consistent without juggling transactions across HTTP boundaries.

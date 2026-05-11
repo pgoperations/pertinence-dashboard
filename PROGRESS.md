@@ -4,7 +4,7 @@ A session-by-session narrative of what's been built, what's in flight, and what'
 
 ## Status
 
-**Phase 2 complete + canonical reference data seeded.** Migration 009 written, supervisor-approved, applied to live Supabase (`hrmrqpkcvyjwxrehrgvq`) 2026-05-11. Counts verified: 24 locations / 24 location_aliases / 20 purposes / 28 purpose_aliases. Next session: start Phase 3 — scaffold `supabase/functions/ingest-bank-deposit/` (Deno-compatible JWT sign, read `2026 LAND`, upsert into `bank_deposits` keyed on `(source_sheet, source_tab, source_row_id)`, emit quality flags for any unmatched purpose/location, refresh `sales_by_location_monthly`).
+**Phase 3 code in place; awaiting first live invocation.** Migration 010 written (aggregate-refresh RPC), Bank Deposit Edge Function written (`supabase/functions/ingest-bank-deposit/` plus shared `sheetsAuth.ts` + `canonicalLookup.ts`). Decisions for Phase 3 locked in DESIGN_DECISIONS.md: native Deno `crypto.subtle` for the RS256 JWT sign (zero deps), `UNFORMATTED_VALUE` Sheets render (dates as serial numbers, amounts as numbers), TRANS CODE as `source_row_id` with `row-{N}` fallback. Next: apply migration 010 via the Supabase SQL editor; set the three function secrets (`SHEETS_SERVICE_ACCOUNT_EMAIL`, `SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY`, `SHEET_ID_BANK_DEPOSIT`); deploy the function; invoke once and verify the response payload (row counts, flag counts, aggregate row count).
 
 ## Build order overview
 
@@ -74,18 +74,32 @@ Step 1 of 9 in the roadmap from [PROJECT_BRIEF.md](PROJECT_BRIEF.md):
   - Seeds `locations`, `location_aliases`, `purposes`, `purpose_aliases` from the approved list. Idempotent: `on conflict (name) do nothing` on canonicals, `on conflict (lower(alias)) do nothing` on aliases, alias FKs resolved via join on `name`.
   - Applied via Supabase SQL editor on the live project. Verification query returned `locations=24, location_aliases=24, purposes=20, purpose_aliases=28` — counts match exactly. Phase 2 fully closed.
 
+- **2026-05-11** — Phase 3 Bank Deposit ingest written (not yet deployed):
+  - Decisions captured in DESIGN_DECISIONS.md → "Ingest Edge Function rules": Deno `crypto.subtle` for JWT sign, `UNFORMATTED_VALUE` Sheets render, TRANS CODE → `row-{N}` fallback for `source_row_id`, aggregate refresh via Postgres function called by RPC.
+  - Header row of `2026 LAND` re-verified via the existing smoke script — confirmed columns A=`DATE`, B=`BANK STATEMENT DETAILS`, C=`AMOUNT`, D=`BANK ACCOUNT`, E=`PURPOSE`, F=`LOCATION`, G=`ACCOUNT PAYMENT NAME`, H=`TRANS CODE`, I=`CLIENT  NAME` (double space), J=`SALES PERSON`, K blank, L second `DATE`, M status (`ALERT SENT`).
+  - `UNFORMATTED_VALUE` rendering confirmed via a throwaway one-shot: dates return as serial numbers (e.g. row showing `1/2/2026` D/M/YYYY came back as `46054` = 2026-02-01), amounts as numbers. Sheet locale is D/M/YYYY (Nigerian convention) but the Edge Function math is locale-free.
+  - Migration 010 (`20260511000010_refresh_sales_aggregates.sql`) — `refresh_sales_by_location_monthly()` Postgres function: DELETE + INSERT GROUP BY inside a single plpgsql body, SECURITY DEFINER, search_path pinned. Returns row count. Granted to `service_role`. **Not yet applied** — pending SQL-editor run.
+  - `supabase/functions/_shared/sheetsAuth.ts` — RS256 JWT sign via WebCrypto (`crypto.subtle.importKey` on PKCS8, `crypto.subtle.sign` with `RSASSA-PKCS1-v1_5`), token exchange against `oauth2.googleapis.com/token`, `readSheetValues()` helper (always uses `UNFORMATTED_VALUE` + `SERIAL_NUMBER`), `sheetsSerialToIsoDate()` helper (Lotus 1-2-3 epoch math).
+  - `supabase/functions/_shared/canonicalLookup.ts` — loads `location_aliases` + `purpose_aliases` once per invocation into `Map<lower(alias), id>`; `lookupCanonical()` returns null for misses so the caller can emit `unknown_*` flags.
+  - `supabase/functions/ingest-bank-deposit/index.ts` — main function. Named-column constants (`COL.DATE=0` etc.), `raw_row` preserves all 10 in-scope columns, dedup pass appends `-row{N}` to disambiguate duplicate TRANS CODES so neither row is silently lost, chunked upsert (500/chunk; ~426 YTD rows fit in one), `rpc('refresh_sales_by_location_monthly')` at the end. Response JSON tallies `rowsRead`, `rowsUpserted`, `blankSkipped`, `fallbackRowIdCount`, `duplicateTransCodes`, `flagCounts`, `aggregateRowsInserted`.
+
 ## Current focus
 
-**Phase 3: Bank Deposit ingest Edge Function.** Canonical lookup is now ready (alias tables seeded), so the ingest can match incoming PURPOSE + LOCATION values on first read. Function lives at `supabase/functions/ingest-bank-deposit/` and needs: Deno-compatible JWT sign for Google Sheets API (the Node `googleapis` package in the smoke script doesn't run on Deno), read `2026 LAND` using the named-column constants from DESIGN_DECISIONS.md (column A `DATE`, column I `CLIENT  NAME` with the intentional double space, skip columns L/M), upsert into `bank_deposits` keyed on `(source_sheet, source_tab, source_row_id)`, emit quality flags (`unknown_purpose`, `unknown_location`, `null_sales_person`, `unparseable_date`) for any unmatched values, then refresh `sales_by_location_monthly`.
+**Phase 3: deploy + first live invocation of `ingest-bank-deposit`.** All code is in place; what's left is the deploy gates and a smoke run against `2026 LAND`.
 
 ## Next-session entry points
 
-1. Decide the Deno-compatible Sheets auth approach: hand-rolled `jose`-based JWT sign vs. `npm:googleapis` import. Hand-rolled is the leaner option for a service-account-only flow; capture decision in DESIGN_DECISIONS.md before coding.
-2. Scaffold `supabase/functions/ingest-bank-deposit/index.ts` + `_shared/sheetsAuth.ts` + `_shared/canonicalLookup.ts` (loads alias maps from DB once per invocation).
-3. Wire the named-column constants from DESIGN_DECISIONS.md (column A `DATE`, column I `CLIENT  NAME` with double space, skip L/M).
-4. Upsert path: dedupe by `(source_sheet, source_tab, source_row_id)`; preserve `raw_row` jsonb; emit `quality_flags`.
-5. Smoke test against `2026 LAND` and spot-check a known transaction (e.g. the OJ Awumi rows the boss referenced).
-6. Trigger `sales_by_location_monthly` refresh inside the same function (single transaction).
+1. **Apply migration 010** (`20260511000010_refresh_sales_aggregates.sql`) via the Supabase SQL editor on `hrmrqpkcvyjwxrehrgvq`. Verify with `select pg_get_functiondef('public.refresh_sales_by_location_monthly'::regproc);`.
+2. **Set three Edge Function secrets** (Supabase dashboard → Edge Functions → Secrets, or `npx supabase secrets set --project-ref hrmrqpkcvyjwxrehrgvq KEY=VALUE`):
+   - `SHEETS_SERVICE_ACCOUNT_EMAIL` (copy from `.env.local`)
+   - `SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY` (PEM with `\n` escapes intact — the function normalizes on read)
+   - `SHEET_ID_BANK_DEPOSIT`
+3. **Log in + link the Supabase CLI** (one-time): `npx supabase login`, then `npx supabase link --project-ref hrmrqpkcvyjwxrehrgvq`.
+4. **Deploy**: `npx supabase functions deploy ingest-bank-deposit`.
+5. **First invocation**: hit the function via `curl` or `supabase functions invoke ingest-bank-deposit`. Inspect the response payload — expect `rowsUpserted ≈ 426`, `flagCounts.null_sales_person ≈ 240+`, `flagCounts.unknown_purpose === 0`, `flagCounts.unknown_location === 0` (since aliases were seeded for every observed variant).
+6. **Verify in DB**: `select count(*) from public.bank_deposits;` (~426), `select * from public.sales_by_location_monthly order by period_year, period_month;` (multiple month × location rows).
+7. **Spot-check a known transaction** — pull a couple of OJ Awumi rows the boss referenced in the requirements meeting to confirm location_id / purpose_id resolved cleanly.
+8. After smoke passes: wire a schedule (Supabase cron at 15-min interval) and add a manual-trigger admin route on the dashboard side.
 
 ## Open items waiting on supervisor
 
