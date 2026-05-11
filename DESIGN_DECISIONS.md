@@ -9,6 +9,7 @@ Read this file at the start of every session. These decisions are settled — do
 - **Discrepancies get their own `data_quality_alerts` table.** Surfaced, never silently reconciled.
 - **Plot type matching lives in TypeScript** (`_shared/parsePlotType.ts`). The `plot_types` table holds only the 4 canonical names: Starter (300), Classic (450), Executive (500/600), Special (everything else).
 - **Marketing Expense period anchor is the source-tab name** ("May 2026" → 2026, 5). In-cell dates are unreliable.
+- **Bank Deposit transaction date is column A (`DATE`) on `2026 LAND`.** Columns L (second `DATE` header) and M (status field) are out of scope — do not ingest. Header `CLIENT  NAME` (column I) has an intentional double space; match exactly in named-column constants.
 
 ## Quality flags vocabulary
 Defined once in `supabase/functions/_shared/quality_flags.ts`. All ingest functions emit the same keys:

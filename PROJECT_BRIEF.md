@@ -30,7 +30,7 @@ The output structure mirrors the existing H1 2025 PDF report (which I've reviewe
    - `2026 LAND` — financial source of truth, ~426 valid txn rows YTD totaling ~₦621M
    - `2026 Weekly Sales Report` — plot counts by location/size; `PLOT TYPE` column embeds count e.g. "1 EXECUTIVE", "1 QUARTER"
    - `2026 Customer File` — customer-level sales, plot size in different format ("600SQM", "1 ACRE")
-   - Date column to use on `2026 LAND`: `DATE.1` (column K) — primary `DATE` defaults to month-start. Confirm with supervisor before final ingest.
+   - Date column on `2026 LAND`: column A (`DATE`) is the real transaction date (supervisor-confirmed 2026-05-11). Column L (second `DATE` header) and column M (status field) are out of scope — do not ingest. Column I header is literally `CLIENT  NAME` with a double space — intentional, match it exactly.
    - 27 PURPOSE variants normalize to ~10 canonical (typos like "OUTRIGHT D&D" vs "OUTRGHT D&D"; multiple "BUSINESS REP. REG" punctuation variants)
    - 24+ LOCATION variants need canonical mapping
    - ~56% of rows have null SALES PERSON — these go into an "Unattributed" bucket in revenue views (visible, not hidden)
@@ -106,11 +106,9 @@ Plus global date-range selector driving all sections.
 
 ## Open items still needing supervisor confirmation (raise but don't block on)
 
-- Confirm `DATE.1` is the real transaction date on Bank Deposit
-- Approval for the canonical location/purpose mapping I'll draft
-- Marketing expense `Category` column added to source sheet
-- 2026 tab created in Marketing Team Reporting Template
-- Confirm customer support panel default brand filter (currently PPL, mirroring H1 PDF)
+- Approval for the canonical location/purpose mapping (draft pending)
+- Marketing expense `Category` column added to source sheet (supervisor agreed 2026-05-11; awaiting actual addition)
+- 2026 tab created in Marketing Team Reporting Template (supervisor agreed 2026-05-11; awaiting actual creation)
 
 ## What I need first
 

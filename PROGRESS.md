@@ -4,15 +4,15 @@ A session-by-session narrative of what's been built, what's in flight, and what'
 
 ## Status
 
-**Phase 2 complete — all 4 sheets shared, auth verified including Bank Deposit `2026 LAND`.** Ready for Phase 3 (Bank Deposit ingest Edge Function). Three schema observations on Bank Deposit need supervisor confirmation before final ingest code — see "Open items waiting on supervisor."
+**Phase 2 complete + Bank Deposit `2026 LAND` schema resolved with supervisor (2026-05-11).** Column A is the real transaction date; columns L and M are out of scope; `CLIENT  NAME` double-space is intentional. Next: draft canonical `locations` + `purposes` mappings from the live data for supervisor review, then Phase 3 (Bank Deposit ingest Edge Function).
 
 ## Build order overview
 
 Step 1 of 9 in the roadmap from [PROJECT_BRIEF.md](PROJECT_BRIEF.md):
 
-1. **Supabase setup, migrations, RLS, seed reference data** ← here, complete pending review/apply
-2. Google Sheets API service account setup, share each sheet
-3. Ingestion Edge Functions — Bank Deposit first, then Customer Support, Customer File, Weekly Sales, Marketing Expense, Realtor Managers Weekly
+1. ~~Supabase setup, migrations, RLS, seed reference data~~ ✓ (canonical `locations` / `purposes` still pending supervisor approval before seed)
+2. ~~Google Sheets API service account setup, share each sheet~~ ✓
+3. Ingestion Edge Functions — Bank Deposit first, then Customer Support, Customer File, Weekly Sales, Marketing Expense, Realtor Managers Weekly ← here
 4. React scaffold — auth, routing, layout shell, global date filter
 5. Sales (Land) section — pattern-setting
 6. Marketing → Customer Support → Realtor Management sections
@@ -50,37 +50,31 @@ Step 1 of 9 in the roadmap from [PROJECT_BRIEF.md](PROJECT_BRIEF.md):
   - Google Sheets API enabled on the project.
   - Service account `dashboard-sheets-reader@pertinence-dashboard.iam.gserviceaccount.com` created with no project-level IAM role (sheet-by-sheet sharing handles auth — more secure).
   - JSON key downloaded, stored outside the repo. `SHEETS_SERVICE_ACCOUNT_EMAIL` + `SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY` set in `.env.local`.
-  - 3 of 4 source sheets shared with the service account as Viewer + IDs captured in `.env.local`:
+  - All 4 source sheets shared with the service account as Viewer + IDs captured in `.env.local`:
     - Marketing Fund Expense Sheet — `SHEET_ID_MARKETING_EXPENSE`
+    - Bank Deposit Mirror — `SHEET_ID_BANK_DEPOSIT` (shared same-day after supervisor approved edit access)
     - MASTER SHEET- CUSTOMER SUPPORT — `SHEET_ID_CUSTOMER_SUPPORT`
     - Marketing Team Reporting Template — `SHEET_ID_REALTOR_MANAGERS_WEEKLY`
-  - 4 of 4 source sheets shared with the service account as Viewer + IDs captured in `.env.local` (Bank Deposit was granted same-day after the supervisor approved edit access).
-  - `scripts/smoke-test-sheets.mjs` created — Node `googleapis`-based reader, run via `pnpm smoke:sheets`. Verified twice: Marketing Fund Expense (`A1:F5` of first tab, Petty Cash Book September 2022 — sheet has history back further than 2026; ingest will need to handle the full tab list and filter by period name), then Bank Deposit Mirror `2026 LAND!A1:N5` returning real 2026 transactions.
-  - **Schema findings on `2026 LAND` that diverge from PROJECT_BRIEF — need supervisor confirmation before ingest:**
-    - PROJECT_BRIEF says `DATE.1` is column K. Observed: column K is empty (acts as a visual separator); the second `DATE` column is column L.
-    - PROJECT_BRIEF says primary `DATE` defaults to month-start. Observed: rows 1–4 show real daily dates (`1/2/2026`, `1/3/2026`), not month-start. The defaulting pattern may show up further down — worth scanning before assuming.
-    - Column M holds a status field (rows 1–2 show `ALERT SENT` and `MANAGER NOT FOUND`). Not in PROJECT_BRIEF. Looks like the source sheet is already maintaining its own data-quality flags — needs investigation before the dashboard's `data_quality_alerts` table starts duplicating that work.
-    - Column I header is literally `CLIENT  NAME` with a double space. Named-column constants in ingest code must match exactly — do not whitespace-normalize the header lookup.
+  - `scripts/smoke-test-sheets.mjs` created — Node `googleapis`-based reader, run via `pnpm smoke:sheets`. Verified against both Marketing Fund Expense and Bank Deposit Mirror `2026 LAND!A1:N5`.
   - Note for Phase 3: Edge Functions run on Deno, so the production ingest code will use a Deno-compatible auth approach (lightweight JWT signing or `npm:googleapis` import), not the Node `googleapis` package this smoke test uses.
+
+- **2026-05-11** — Supervisor decisions captured (recorded in PROJECT_BRIEF.md + DESIGN_DECISIONS.md):
+  - Bank Deposit `2026 LAND`: column A is the real transaction date; columns L (second `DATE`) and M (status field) are out of scope; `CLIENT  NAME` double-space header is intentional.
+  - Customer Support panel default brand filter: PPL (confirmed, mirrors H1 PDF).
+  - Marketing Expense `Category` dropdown: supervisor agreed to add it.
+  - 2026 tab in Marketing Team Reporting Template: supervisor agreed to create it.
+  - Test user deleted from `auth.users` — only the real admin remains.
 
 ## Current focus
 
-**Phase 3: Bank Deposit ingest Edge Function.** Cleanest source, financial source of truth, drives the ingest pattern every other source will follow. Before writing code, resolve the four `2026 LAND` schema questions above with the supervisor (or by reading further into the sheet — only the column-position question requires the supervisor; the others can be answered by inspection).
+**Draft canonical `locations` + `purposes` mappings from the live Bank Deposit data so the supervisor can review them.** Migration 002 ships the `locations` / `location_aliases` / `purposes` / `purpose_aliases` tables empty by design — they only get seeded after supervisor approval. Once approved, write migration 009 with the seed rows and then start Phase 3 (Bank Deposit ingest Edge Function).
 
 ## Next checkpoint
 
-First ingest Edge Function (Bank Deposit) written + deployed + producing rows in `bank_deposits` with proper `source_row_id` idempotency.
+Canonical mapping drafts produced + sent to supervisor; then first ingest Edge Function (Bank Deposit) written + deployed + producing rows in `bank_deposits` with proper `source_row_id` idempotency.
 
 ## Open items waiting on supervisor
 
-From [PROJECT_BRIEF.md](PROJECT_BRIEF.md) "Open items still needing supervisor confirmation":
-
-- [ ] Bank Deposit `2026 LAND` schema clarifications (4 questions): which column is the real transaction date (column L has a second `DATE` header; column K is empty); whether primary `DATE` (column A) really defaults to month-start (first 4 rows show real daily dates); what column M's status field (`ALERT SENT` / `MANAGER NOT FOUND`) represents and how it relates to the dashboard's `data_quality_alerts`; confirm the `CLIENT  NAME` double-space in column I is intentional.
-- [ ] Approval for the canonical location/purpose mappings (the supervisor needs to review the draft before `locations` / `purposes` ref tables get seeded — that's why migration 002 ships those tables empty)
-- [ ] Marketing Expense `Category` dropdown column added to source sheet (until then, ingest falls back to keyword-based auto-categorization with `fallback_category` quality flag)
-- [ ] 2026 tab created in Marketing Team Reporting Template — Realtor Managers Weekly Report
-- [ ] Confirm Customer Support panel default brand filter (currently planned: PPL, mirroring H1 PDF; toggle to RealVest or "all")
-
-## Open items waiting on Shawn
-
-- [ ] Clean up the test user (`delete from auth.users where email = '<test email>';` — cascade-deletes the profile row), so the only remaining account is your real admin.
+- [ ] Approve canonical `locations` + `purposes` mappings (draft in progress, pulled from live `2026 LAND` data).
+- [ ] Add `Category` dropdown column to Marketing Fund Expense source sheet (supervisor agreed 2026-05-11; awaiting actual addition).
+- [ ] Create 2026 tab in Marketing Team Reporting Template — Realtor Managers Weekly Report (supervisor agreed 2026-05-11; awaiting actual creation).
