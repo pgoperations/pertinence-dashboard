@@ -4,7 +4,7 @@ A session-by-session narrative of what's been built, what's in flight, and what'
 
 ## Status
 
-**Phase 3 code in place; awaiting first live invocation.** Migration 010 written (aggregate-refresh RPC), Bank Deposit Edge Function written (`supabase/functions/ingest-bank-deposit/` plus shared `sheetsAuth.ts` + `canonicalLookup.ts`). Decisions for Phase 3 locked in DESIGN_DECISIONS.md: native Deno `crypto.subtle` for the RS256 JWT sign (zero deps), `UNFORMATTED_VALUE` Sheets render (dates as serial numbers, amounts as numbers), TRANS CODE as `source_row_id` with `row-{N}` fallback. Next: apply migration 010 via the Supabase SQL editor; set the three function secrets (`SHEETS_SERVICE_ACCOUNT_EMAIL`, `SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY`, `SHEET_ID_BANK_DEPOSIT`); deploy the function; invoke once and verify the response payload (row counts, flag counts, aggregate row count).
+**Phase 3 complete — Bank Deposit ingest live on Supabase.** First successful end-to-end invocation 2026-05-12: 448 rows upserted into `bank_deposits`, 126 monthly × location buckets in `sales_by_location_monthly`, **zero unmatched purposes or locations** (Phase 2 alias seeds cover every value on `2026 LAND` today), 1 truly unparseable date row (real anomaly worth surfacing to the supervisor). Function deployed with `--no-verify-jwt` so cron and the eventual admin button can call it without per-request auth — fact-table writes are still service-role-only via the function's internal Supabase client. Next: Marketing Expense ingest, then Customer Support ingest. The Realtor Managers Weekly ingest is gated on the supervisor populating the duplicated `Realtor Managers Weekly Report 2026` tab.
 
 ## Build order overview
 
@@ -74,6 +74,17 @@ Step 1 of 9 in the roadmap from [PROJECT_BRIEF.md](PROJECT_BRIEF.md):
   - Seeds `locations`, `location_aliases`, `purposes`, `purpose_aliases` from the approved list. Idempotent: `on conflict (name) do nothing` on canonicals, `on conflict (lower(alias)) do nothing` on aliases, alias FKs resolved via join on `name`.
   - Applied via Supabase SQL editor on the live project. Verification query returned `locations=24, location_aliases=24, purposes=20, purpose_aliases=28` — counts match exactly. Phase 2 fully closed.
 
+- **2026-05-12** — Phase 3 deploy + first live ingest, plus two real-data fixes:
+  - Migration 010 first invocation tripped Supabase's `safeupdate` extension on the unqualified `DELETE` inside `refresh_sales_by_location_monthly()` — even though the statement was wrapped in a `SECURITY DEFINER plpgsql` body. Migration 011 (`20260512000011_fix_aggregate_refresh_truncate.sql`) swaps `DELETE` for `TRUNCATE` which is the correct primitive anyway (faster, no MVCC overhead) and sidesteps the safety net by design.
+  - First successful invocation revealed `unparseable_date: 397` (89% of rows). Root cause: (a) supervisor's ledger convention enters the date once per day and leaves column A blank for subsequent deposits on the same day; (b) ~60 dates are typed as text (`"13/01/2026"`, D/M/YYYY Nigerian convention) instead of as real date cells. Fixes shipped in the Edge Function:
+    - `sheetsAuth.ts` now exports `parseDmyTextDate()` and a unified `parseSheetDate()` that tries serial-number first, then D/M/YYYY text. Calendar validation (`new Date(...)` round-trip) rejects Feb-30-style garbage.
+    - `ingest-bank-deposit/index.ts` carries a `lastValidDate` across rows. Empty column A → forward-fill from the most recent parsed date. Non-empty but unparseable → flagged with `unparseable_date` and NOT forward-filled (so typos can't silently inherit a neighbouring date). Response payload now includes `forwardFilledDateCount` for ops triage.
+  - Second invocation after the date fix: 448 rows, 126 aggregate buckets, `flagCounts.unparseable_date=1` (down from 397), `flagCounts.null_sales_person=253` (matches the brief's "~56% null SALES PERSON" prediction exactly: 253/448 = 56.5%), `forwardFilledDateCount=497` (counts forward-fills on data + blank rows; slightly noisy but a useful signal that the supervisor's date convention is heavy).
+  - 6 duplicate TRANS CODES detected and disambiguated with `-row{N}` suffix (`SR-00168`, `PPL-00994`, `J-1151`, `PPL-01062`, `J-1156`, `PPL-01086`) — neither row in any pair lost.
+  - 24 rows had blank TRANS CODE and got the `row-{N}` fallback id. Grep-able for ops follow-up.
+  - Function deployed with `--no-verify-jwt`. Architectural rationale: the function is invoked by cron and an eventual admin-only "Refresh now" button; both contexts have no per-request user identity that matters. Internal auth still hard: service-role secret for DB writes, service-account JWT for Google Sheets. Captured in DESIGN_DECISIONS.md.
+  - RLS verified working as intended: bank_deposits / sales_by_location_monthly are unreadable via the publishable (anon) key. Eyeball-level verification requires SQL editor or a signed-in admin JWT — not a regression, it's the correct posture for fact tables.
+
 - **2026-05-11** — Phase 3 Bank Deposit ingest written (not yet deployed):
   - Decisions captured in DESIGN_DECISIONS.md → "Ingest Edge Function rules": Deno `crypto.subtle` for JWT sign, `UNFORMATTED_VALUE` Sheets render, TRANS CODE → `row-{N}` fallback for `source_row_id`, aggregate refresh via Postgres function called by RPC.
   - Header row of `2026 LAND` re-verified via the existing smoke script — confirmed columns A=`DATE`, B=`BANK STATEMENT DETAILS`, C=`AMOUNT`, D=`BANK ACCOUNT`, E=`PURPOSE`, F=`LOCATION`, G=`ACCOUNT PAYMENT NAME`, H=`TRANS CODE`, I=`CLIENT  NAME` (double space), J=`SALES PERSON`, K blank, L second `DATE`, M status (`ALERT SENT`).
@@ -85,21 +96,18 @@ Step 1 of 9 in the roadmap from [PROJECT_BRIEF.md](PROJECT_BRIEF.md):
 
 ## Current focus
 
-**Phase 3: deploy + first live invocation of `ingest-bank-deposit`.** All code is in place; what's left is the deploy gates and a smoke run against `2026 LAND`.
+**Phase 3 closed. Picking up Marketing Expense ingest next.** Bank Deposit ingest is live and producing correct buckets; the two outstanding follow-ups for that source (schedule wiring + admin button) are panel work, not ingest work, so they land after the React scaffold (step 4 of the roadmap).
 
 ## Next-session entry points
 
-1. **Apply migration 010** (`20260511000010_refresh_sales_aggregates.sql`) via the Supabase SQL editor on `hrmrqpkcvyjwxrehrgvq`. Verify with `select pg_get_functiondef('public.refresh_sales_by_location_monthly'::regproc);`.
-2. **Set three Edge Function secrets** (Supabase dashboard → Edge Functions → Secrets, or `npx supabase secrets set --project-ref hrmrqpkcvyjwxrehrgvq KEY=VALUE`):
-   - `SHEETS_SERVICE_ACCOUNT_EMAIL` (copy from `.env.local`)
-   - `SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY` (PEM with `\n` escapes intact — the function normalizes on read)
-   - `SHEET_ID_BANK_DEPOSIT`
-3. **Log in + link the Supabase CLI** (one-time): `npx supabase login`, then `npx supabase link --project-ref hrmrqpkcvyjwxrehrgvq`.
-4. **Deploy**: `npx supabase functions deploy ingest-bank-deposit`.
-5. **First invocation**: hit the function via `curl` or `supabase functions invoke ingest-bank-deposit`. Inspect the response payload — expect `rowsUpserted ≈ 426`, `flagCounts.null_sales_person ≈ 240+`, `flagCounts.unknown_purpose === 0`, `flagCounts.unknown_location === 0` (since aliases were seeded for every observed variant).
-6. **Verify in DB**: `select count(*) from public.bank_deposits;` (~426), `select * from public.sales_by_location_monthly order by period_year, period_month;` (multiple month × location rows).
-7. **Spot-check a known transaction** — pull a couple of OJ Awumi rows the boss referenced in the requirements meeting to confirm location_id / purpose_id resolved cleanly.
-8. After smoke passes: wire a schedule (Supabase cron at 15-min interval) and add a manual-trigger admin route on the dashboard side.
+1. **Investigate the 1 unparseable_date row** — pull it via SQL editor (`select * from public.bank_deposits where quality_flags ? 'unparseable_date';`) and either fix the source-sheet cell or surface to the supervisor as a real anomaly.
+2. **Marketing Expense ingest scaffolding** (`supabase/functions/ingest-marketing-expense/`):
+   - Supervisor will have added the `CATEGORY` column (per the dropdown plan in the previous session). Once present, parser reads E (Date) / F (Description) / G (Total) / H (CATEGORY) on the Expenditure side, and A (Date) / B (Description) / C (Amount) on the Income side, one tab per month.
+   - Period anchor (period_year, period_month) comes from the tab name via `public.parse_month_year()` — DESIGN_DECISIONS rule.
+   - Need migration 012 to seed `expense_categories` with the 11 H1 canonicals (`Stakeholders Meeting`, `MSME Campaign`, `Digital Ad Campaign`, `Corporate Marketing`, `Realtor Activity`, `SettleQuick`, `Realtor Manager Airtime`, `SMS Purchase`, `Genius`, `Social Media`, `Miscellaneous`).
+   - Until the supervisor backfills CATEGORY on existing rows, fall back to keyword matching against `Description` and emit `fallback_category` per the quality-flag vocabulary.
+3. **Customer Support ingest** comes after Marketing Expense — needs the alias mapping for `complaint_categories` (typos like "Documentaion") which is still un-seeded.
+4. **Realtor Managers Weekly ingest** is unblocked at the structural level (supervisor duplicated the tab) but needs a one-time inspection pass to pin every named-cell position before code lands — the wide pivot needs unpivoting at ingest time.
 
 ## Open items waiting on supervisor
 

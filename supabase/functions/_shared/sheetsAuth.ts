@@ -129,3 +129,37 @@ export function sheetsSerialToIsoDate(serial: unknown): string | null {
   const dd = String(d.getUTCDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
 }
+
+// Parse a Nigerian D/M/YYYY (or D/M/YY) text date as an ISO YYYY-MM-DD string.
+// Returns null on any shape that doesn't match — caller decides whether to flag.
+// Supervisor's 2026 LAND sheet has ~60 rows typed as text (e.g. "13/01/2026")
+// instead of as real date cells, so the ingest needs both serial and text paths.
+export function parseDmyTextDate(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const m = /^\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s*$/.exec(value);
+  if (!m) return null;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  let year = Number(m[3]);
+  if (year < 100) year += 2000;
+  if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1900 || year > 2100) return null;
+  // Validate against actual calendar (e.g. reject Feb 30).
+  const d = new Date(Date.UTC(year, month - 1, day));
+  if (
+    d.getUTCFullYear() !== year ||
+    d.getUTCMonth() !== month - 1 ||
+    d.getUTCDate() !== day
+  ) return null;
+  const yyyy = String(year);
+  const mm = String(month).padStart(2, '0');
+  const dd = String(day).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// Unified date parser used by ingest functions. Tries serial-number first
+// (the UNFORMATTED_VALUE path, which is the supervisor's preferred format),
+// then falls back to D/M/YYYY text. Returns null only on truly unparseable
+// cell values so callers can flag them.
+export function parseSheetDate(value: unknown): string | null {
+  return sheetsSerialToIsoDate(value) ?? parseDmyTextDate(value);
+}

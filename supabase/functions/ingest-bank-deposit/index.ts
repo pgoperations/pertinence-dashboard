@@ -16,16 +16,28 @@
 //   * Idempotent upsert keyed on (source_sheet, source_tab, source_row_id).
 //   * After ingest, refresh sales_by_location_monthly via the RPC in migration 010.
 //
+// Date handling:
+//   * UNFORMATTED_VALUE serial numbers go through sheetsSerialToIsoDate.
+//   * Text dates ("13/01/2026", D/M/YYYY Nigerian convention) go through
+//     parseDmyTextDate. ~60 such rows exist on 2026 LAND because some entries
+//     were typed instead of date-formatted.
+//   * Empty column A → forward-fill from the most recently parsed date on
+//     this sheet. The supervisor's ledger convention is to enter the date
+//     once per day and leave subsequent same-day deposits blank in column A.
+//   * Non-empty but unparseable cell → real anomaly. Flagged with
+//     unparseable_date and NOT forward-filled, so a typo can't silently
+//     inherit a neighbouring date.
+//
 // Quality flags emitted (from _shared/quality_flags.ts):
 //   * unknown_purpose, unknown_location  — alias didn't match a canonical
-//   * unparseable_date                    — column A blank / non-numeric
+//   * unparseable_date                    — non-empty but unparseable cell
 //   * null_sales_person                   — column J empty (~56% of 2026 LAND)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import {
   getSheetsAccessToken,
+  parseSheetDate,
   readSheetValues,
-  sheetsSerialToIsoDate,
 } from '../_shared/sheetsAuth.ts';
 import {
   loadCanonicalLookups,
@@ -110,6 +122,8 @@ function toNumberOrZero(v: unknown): number {
 function parseRow(
   row: unknown[],
   sheetRowNumber: number,
+  txn_date: string | null,
+  dateUnparseable: boolean,
   lookups: { locationByAlias: Map<string, string>; purposeByAlias: Map<string, string> },
 ): ParsedRow | null {
   // Skip totally blank rows (rare but happen in spreadsheets).
@@ -118,9 +132,7 @@ function parseRow(
   }
 
   const flags: QualityFlags = {};
-
-  const txn_date = sheetsSerialToIsoDate(row[COL.DATE]);
-  if (txn_date === null) flags[QUALITY_FLAGS.UNPARSEABLE_DATE] = true;
+  if (dateUnparseable) flags[QUALITY_FLAGS.UNPARSEABLE_DATE] = true;
 
   const amount_received = toNumberOrZero(row[COL.AMOUNT]);
 
@@ -180,12 +192,39 @@ Deno.serve(async (req) => {
     const sheetData = await readSheetValues(accessToken, spreadsheetId, READ_RANGE);
     const rawRows = sheetData.values ?? [];
 
+    // Forward-fill convention on 2026 LAND: the supervisor enters the date
+    // once for a day's first deposit and leaves column A blank for subsequent
+    // deposits on the same date. Empty cell => same as the row above. We carry
+    // the last successfully parsed date across rows so `txn_date` reflects what
+    // the supervisor sees visually. A non-empty but unparseable date cell is
+    // treated as a real anomaly (flagged with unparseable_date, NOT forward-
+    // filled) so genuine typos don't silently inherit a wrong date.
     const parsed: ParsedRow[] = [];
     let blankSkipped = 0;
     let fallbackRowIdCount = 0;
+    let forwardFilledDateCount = 0;
+    let lastValidDate: string | null = null;
     for (let i = 0; i < rawRows.length; i++) {
       const sheetRowNumber = i + 2; // range starts at A2
-      const parsedRow = parseRow(rawRows[i], sheetRowNumber, lookups);
+      const row = rawRows[i] ?? [];
+      const rawDate = row[COL.DATE];
+      const dateIsEmpty = rawDate === '' || rawDate === undefined || rawDate === null;
+
+      let txn_date: string | null;
+      let dateUnparseable = false;
+      if (dateIsEmpty) {
+        txn_date = lastValidDate;
+        if (txn_date !== null) forwardFilledDateCount++;
+      } else {
+        txn_date = parseSheetDate(rawDate);
+        if (txn_date === null) {
+          dateUnparseable = true;
+        } else {
+          lastValidDate = txn_date;
+        }
+      }
+
+      const parsedRow = parseRow(row, sheetRowNumber, txn_date, dateUnparseable, lookups);
       if (!parsedRow) {
         blankSkipped++;
         continue;
@@ -250,6 +289,7 @@ Deno.serve(async (req) => {
         rowsUpserted: upserted,
         blankSkipped,
         fallbackRowIdCount,
+        forwardFilledDateCount,
         duplicateTransCodes,
         flagCounts,
         aggregateRowsInserted: refreshResult,
