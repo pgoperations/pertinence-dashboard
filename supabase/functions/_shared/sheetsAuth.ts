@@ -95,6 +95,40 @@ export type SheetsValuesResponse = {
   values?: unknown[][];
 };
 
+export type SheetTabMeta = {
+  sheetId: number;
+  title: string;
+};
+
+// Lists every tab in a spreadsheet. Used by ingests that need to discover tabs
+// dynamically (e.g. Marketing Expense, where the supervisor adds one tab per
+// month and we want new months to be picked up without a code change).
+// `fields=sheets.properties` keeps the response small — we don't need cells.
+export async function getSheetTabs(
+  accessToken: string,
+  spreadsheetId: string,
+): Promise<SheetTabMeta[]> {
+  const url = new URL(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}`,
+  );
+  url.searchParams.set('fields', 'sheets.properties');
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`Sheets metadata read failed: ${res.status} ${await res.text()}`);
+  }
+  const data = (await res.json()) as { sheets?: Array<{ properties?: { sheetId?: number; title?: string } }> };
+  const out: SheetTabMeta[] = [];
+  for (const s of data.sheets ?? []) {
+    const p = s.properties;
+    if (p && typeof p.sheetId === 'number' && typeof p.title === 'string') {
+      out.push({ sheetId: p.sheetId, title: p.title });
+    }
+  }
+  return out;
+}
+
 // Read a single range from a sheet. `valueRenderOption=UNFORMATTED_VALUE` keeps
 // dates as serial numbers and amounts as numbers (locked in DESIGN_DECISIONS).
 export async function readSheetValues(

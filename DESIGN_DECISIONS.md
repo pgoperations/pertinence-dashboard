@@ -34,6 +34,11 @@ Three roles on a `profiles` table extending `auth.users`: `admin`, `editor`, `vi
 - Currency: `numeric(15,2)`. Never float for money.
 - Fuzzy name matching uses configurable threshold; below-threshold matches go to "needs review", never auto-merge.
 
+## Realtor Management panel scope (v1, locked 2026-05-14)
+- **v1 Realtor Management panel shows aggregate-only metrics**, not per-manager performance. The `2026 Realtors Managers Weekly Report` tab is a wide weekly pivot whose rows are aggregate counts ("Number of New Realtors", "Number of New Referrals", "Site Inspection", etc.) — there are no per-manager columns. The supervisor's H1 2025 PDF only carried per-manager breakdowns for MAY and JUNE, both as one-off snapshots hand-compiled outside the weekly process; the recurring tracking never produced per-manager data.
+- **Schema keeps `realtor_managers` (Mrs Kemi / Richard Makava / Debbie) and the `realtor_manager_id` FK on facts.** Re-introducing the per-manager panel later is UI work only when a source of recurring per-manager data appears (manual-entry form, an extra section the supervisor agrees to maintain, or pulled from OneApp in Phase 2).
+- **The "Newly Onboarded Realtors – Digital Ad" sub-panel in the PDF is out of scope for v1** for the same reason — it only existed for MAY/JUNE 2025. Greying-out the section in the UI with a "data source pending" note (per the OneApp pattern) is the honest move.
+
 ## Ingest Edge Function rules (Phase 3 onward, locked 2026-05-11)
 - **Google Sheets auth: native Deno `crypto.subtle`, no external lib.** Hand-roll the RS256 JWT sign + `urn:ietf:params:oauth:grant-type:jwt-bearer` token exchange. Service-account-only flow, zero deps, smallest cold-start. Smoke script (`scripts/smoke-test-sheets.mjs`) keeps using Node `googleapis` — that's local-only.
 - **Sheets read uses `valueRenderOption=UNFORMATTED_VALUE`.** Dates come back as serial numbers (days since 1899-12-30 epoch), amounts as numbers. Eliminates locale ambiguity on `M/D/YYYY` vs `D/M/YYYY` and string-vs-number coercion on amounts.

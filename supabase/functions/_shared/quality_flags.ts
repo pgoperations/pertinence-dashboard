@@ -39,6 +39,14 @@ export const QUALITY_FLAGS = {
   // Bank Deposit specifically: ~56% of rows in 2026 LAND have a null SALES PERSON.
   // These get an "Unattributed" bucket on revenue views (visible, not hidden).
   NULL_SALES_PERSON: 'null_sales_person',
+
+  // Customer Support: "Nature of Complaint" cell held a non-empty value that
+  // didn't match any seeded `complaint_categories` row or alias. Row is still
+  // ingested with `complaint_category_id` null and `complaint_raw` carrying the
+  // original text; the supervisor adds the alias (or a new canonical) via the
+  // admin panel and the next ingest run picks it up. Empty Nature cells are
+  // NOT flagged with this — absence is its own state.
+  UNKNOWN_COMPLAINT_CATEGORY: 'unknown_complaint_category',
 } as const;
 
 export type QualityFlagKey = (typeof QUALITY_FLAGS)[keyof typeof QUALITY_FLAGS];

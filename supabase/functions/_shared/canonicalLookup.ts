@@ -55,3 +55,45 @@ export function lookupCanonical(
   if (!key) return null;
   return map.get(key) ?? null;
 }
+
+// Customer Support ingest lookups.
+// complaint_aliases works exactly like location_aliases / purpose_aliases: a
+// case-insensitive alias → canonical-id map, loaded once per invocation.
+export async function loadComplaintAliases(
+  supabase: SupabaseClient,
+): Promise<Map<string, string>> {
+  const { data, error } = await supabase
+    .from('complaint_aliases')
+    .select('alias, complaint_category_id');
+  if (error) throw new Error(`complaint_aliases load failed: ${error.message}`);
+  const map = new Map<string, string>();
+  for (const row of data ?? []) {
+    if (row.alias && row.complaint_category_id) {
+      map.set(String(row.alias).toLowerCase(), row.complaint_category_id as string);
+    }
+  }
+  return map;
+}
+
+// Rep lookups for Customer Support: tab name (uppercase, e.g. "CATHERINE")
+// maps to the seeded customer_service_reps row (mixed case, e.g. "Catherine").
+// Returns lower(name) → { id, brand_id } so the ingest can resolve every row
+// to its rep without one query per tab.
+export type CsRepLookup = { id: string; brand_id: string };
+
+export async function loadActiveCustomerServiceReps(
+  supabase: SupabaseClient,
+): Promise<Map<string, CsRepLookup>> {
+  const { data, error } = await supabase
+    .from('customer_service_reps')
+    .select('id, name, brand_id, active')
+    .eq('active', true);
+  if (error) throw new Error(`customer_service_reps load failed: ${error.message}`);
+  const map = new Map<string, CsRepLookup>();
+  for (const row of data ?? []) {
+    if (row.name && row.id && row.brand_id) {
+      map.set(String(row.name).toLowerCase(), { id: row.id as string, brand_id: row.brand_id as string });
+    }
+  }
+  return map;
+}
