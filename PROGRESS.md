@@ -4,17 +4,17 @@ A session-by-session narrative of what's been built, what's in flight, and what'
 
 ## Status
 
-**Phase 3 complete — Bank Deposit ingest live on Supabase.** First successful end-to-end invocation 2026-05-12: 448 rows upserted into `bank_deposits`, 126 monthly × location buckets in `sales_by_location_monthly`, **zero unmatched purposes or locations** (Phase 2 alias seeds cover every value on `2026 LAND` today), 1 truly unparseable date row (real anomaly worth surfacing to the supervisor). Function deployed with `--no-verify-jwt` so cron and the eventual admin button can call it without per-request auth — fact-table writes are still service-role-only via the function's internal Supabase client. Next: Marketing Expense ingest, then Customer Support ingest. The Realtor Managers Weekly ingest is gated on the supervisor populating the duplicated `Realtor Managers Weekly Report 2026` tab.
+**Phase 4 React scaffold landed.** Three ingests live (Bank Deposit / Marketing Expense / Customer Support) + the dashboard shell now exists: auth flow, protected routes, AppShell with mobile bottom-tab nav + desktop sidebar, global date-range filter persisted to URL search params, five honest section placeholders showing real ingest status (no fake charts). Tech: React 18 + Vite 8 + Tailwind v3 + react-router v7 + Supabase auth. Build clean (`tsc -b` exit 0, `vite build` 425kB / 123kB gzipped). Next: pick between (a) starting the Sales (Land) section for real — most complex panel, pattern-setting for the other four — or (b) finishing remaining ingests (Customer File, Weekly Sales) so Sales has full backing data.
 
 ## Build order overview
 
 Step 1 of 9 in the roadmap from [PROJECT_BRIEF.md](PROJECT_BRIEF.md):
 
-1. ~~Supabase setup, migrations, RLS, seed reference data~~ ✓ (canonical `locations` / `purposes` still pending supervisor approval before seed)
+1. ~~Supabase setup, migrations, RLS, seed reference data~~ ✓
 2. ~~Google Sheets API service account setup, share each sheet~~ ✓
-3. Ingestion Edge Functions — Bank Deposit first, then Customer Support, Customer File, Weekly Sales, Marketing Expense, Realtor Managers Weekly ← here
-4. React scaffold — auth, routing, layout shell, global date filter
-5. Sales (Land) section — pattern-setting
+3. Ingestion Edge Functions — Bank Deposit ✓, Marketing Expense ✓, Customer Support ✓; Customer File / Weekly Sales / Realtor Managers Weekly remain
+4. ~~React scaffold — auth, routing, layout shell, global date filter~~ ✓
+5. Sales (Land) section — pattern-setting ← here
 6. Marketing → Customer Support → Realtor Management sections
 7. Media & Content (manual-entry forms for the 4 brands)
 8. Rule-based narrative engine, per-section, cached per period
@@ -145,9 +145,20 @@ Step 1 of 9 in the roadmap from [PROJECT_BRIEF.md](PROJECT_BRIEF.md):
   - Per-tab logicals → upserted (composite-split delta): CATHERINE 1,809 → 1,911 (+102, 98 composite rows); MARIAM 1,994 → 2,083 (+89, 83 composite rows); MARY 2,008 → 2,057 (+49, 49); YETUNDE 1,855 → 1,903 (+48, 46); LOVINAL 2,552 → 2,809 (+257, 224 — Lovinal's tendency to log multiple complaints per entry confirmed).
   - Total run wall-time: ~12 seconds for the full sheet read + 22 chunked upserts + aggregate refresh.
 
+- **2026-05-15** — Phase 4 React scaffold landed (step 4 of 9 in the roadmap):
+  - **Design lock** via ui-ux-pro-max: Executive Dashboard style; B2B Service palette (slate-900 primary, slate-700 secondary, sky-700 `#0369A1` accent, slate-50 bg); Corporate Trust typography (Lexend headings, Source Sans 3 body — Lexend chosen for readability on the supervisor's phone). Encoded in `tailwind.config.js` as the `brand` 50–900 ramp + `accent` token; fonts preconnected and loaded in `index.html`.
+  - **Auth flow**: `AuthProvider` in `src/hooks/useAuth.tsx` holds session + profile + status (`loading|signed-out|signed-in`), subscribes to `supabase.auth.onAuthStateChange`, loads the `profiles` row after sign-in. `ProtectedRoute` redirects unauthenticated users to `/sign-in` and preserves the requested path in router state for post-login redirect. `SignInPage` is the only public route; sign-up has no UI (admin-provisioned accounts only).
+  - **Routes** (`src/App.tsx`, react-router v7): `/sign-in` public; `/sales`, `/marketing`, `/customer-support`, `/realtor-management`, `/media-content` protected behind `AppShell`; index redirects to `/sales`; `*` → 404 page. Anon key reads are zero on fact tables per RLS so the gate is real.
+  - **Global date range** (`src/hooks/useDateRange.tsx` + `src/lib/dateRange.ts`): six presets (H1 2026 default, YTD, This Quarter, This Month, Last 30 days, H2 2025) plus custom. State persisted to URL search params (`?from=YYYY-MM-DD&to=YYYY-MM-DD`) — refresh-safe and shareable. `matchPreset()` reverse-derives the preset id from the current `from/to` so the chip label stays honest after a Custom edit.
+  - **AppShell** (`src/components/AppShell.tsx`): sticky header with brand, `DateRangePicker` chip, and sign-out button (icon-only on mobile). Desktop ≥ md: collapsible 56-wide sidebar with full labels. Mobile < md: fixed bottom tab bar with 5 destinations (`Sales / Marketing / Support / Realtors / Media`) — sits at the iOS 5-destination guideline limit. Bottom-nav padding uses `env(safe-area-inset-bottom)` for iPhone home-indicator clearance. Header sticks at `top-0`, content wrapper has `pb-24 md:pb-10` so the bottom-nav doesn't cover the last card.
+  - **DateRangePicker** (`src/components/DateRangePicker.tsx`): chip trigger shows preset name when one matches, formatted range otherwise. On mobile the popover renders as a bottom sheet (`fixed inset-x-3 bottom-3`) with a backdrop; on desktop as a 320px-wide popover anchored to the chip. Custom range uses native `type="date"` inputs (iOS shows the wheel picker, desktop a calendar). Closes on outside click and Escape; trigger refocuses on Escape.
+  - **Section placeholders**: every page uses `SectionHeading` (title + subtitle + current range) and a `StatusBanner` describing the actual ingest state today (Sales/Marketing/Support → "ingest live" with row counts; Realtor Management / Media & Content → "pending"). `PlaceholderCard`s show grey rectangles where real charts will go. No fake numbers shown anywhere — the supervisor sees an honest state.
+  - **Icons** hand-rolled inline SVG in Lucide style (`src/components/icons.tsx`) — zero extra deps. Per ui-ux-pro-max checklist: no emoji icons, 24×24 viewbox, consistent stroke.
+  - **Type check**: `tsc -b` exits 0 under `strict + noUnusedLocals + noUnusedParameters`. Production build: 425.80 kB JS / 123.18 kB gzipped (Recharts dominates the bundle — revisit if it hurts the supervisor's phone load time once a real chart is wired).
+
 ## Current focus
 
-**Three ingests live and clean.** Bank Deposit (448 rows + 126 sales-by-location buckets), Marketing Expense (94 rows + 5 marketing-monthly buckets), Customer Support (10,763 rows + 26 cs-monthly buckets). Next on the roadmap: pick between (a) Customer File / Weekly Sales ingests (both on Bank Deposit Mirror — same source-sheet, additional tabs), (b) Realtor Managers Weekly ingest (aggregate-only per the locked design decision), or (c) start the React scaffold so the supervisor can see something. After three back-to-back ingest sessions, option (c) has the highest signal-to-effort for a supervisor demo.
+**Dashboard shell live.** Auth, routing, layout, global date filter, five honest section placeholders all in. Next: pick between (a) **Sales (Land) section for real** — most complex panel, pattern-setting for the rest, can backfill on Bank Deposit data already in `sales_by_location_monthly`; (b) **Customer File + Weekly Sales ingests** so Sales has full backing data when it ships; (c) wire `.env.local` `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` + a Netlify deploy so the supervisor can see the shell on his phone today.
 
 ## Next-session entry points
 
