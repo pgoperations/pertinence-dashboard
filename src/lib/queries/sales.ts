@@ -15,6 +15,7 @@ export type SalesStage = 'initial' | 'further' | 'fee';
 
 export type PurposeStages = {
   byId: Map<string, SalesStage>;
+  nameById: Map<string, string>;
 };
 
 export async function loadPurposeStages(): Promise<PurposeStages> {
@@ -24,10 +25,12 @@ export async function loadPurposeStages(): Promise<PurposeStages> {
   if (error) throw error;
 
   const byId = new Map<string, SalesStage>();
+  const nameById = new Map<string, string>();
   for (const row of data ?? []) {
     byId.set(row.id, classifyPurposeName(row.name));
+    nameById.set(row.id, row.name);
   }
-  return { byId };
+  return { byId, nameById };
 }
 
 export function classifyPurposeName(name: string): SalesStage {
@@ -37,7 +40,7 @@ export function classifyPurposeName(name: string): SalesStage {
 }
 
 // ----------------------------------------------------------------------------
-// Panel data: KPIs + month-on-month series
+// Panel data: KPIs + month-on-month series + drill-down structures
 // ----------------------------------------------------------------------------
 
 export type SalesKpis = {
@@ -48,17 +51,55 @@ export type SalesKpis = {
   feesReceived: number;
 };
 
+export type PurposeBreakdownEntry = {
+  purposeName: string;
+  amount: number;
+};
+
+export type PlotTypeBreakdownEntry = {
+  plotTypeName: string;
+  count: number;
+  payable: number;
+};
+
+export type KpiBreakdowns = {
+  /** by plot type */
+  plotsSold: PlotTypeBreakdownEntry[];
+  /** by plot type — same plot-type bucketing, value is payable */
+  totalPayable: PlotTypeBreakdownEntry[];
+  /** by purpose canonical: Initial Land, Initial D&D, Initial Doc Levy, Outright Land, Outright D&D */
+  initialReceived: PurposeBreakdownEntry[];
+  /** by purpose canonical: Further Land/D&D/Doc Levy, Balance Land/D&D/Doc Levy */
+  furtherReceived: PurposeBreakdownEntry[];
+  /** by purpose canonical: Allocation Fee, Security Fee, Change of Ownership, etc. */
+  feesReceived: PurposeBreakdownEntry[];
+};
+
 export type SalesMonthBucket = {
   /** YYYY-MM */
   month: string;
   initial: number;
   further: number;
   payable: number;
+  // Drill-down: per-canonical breakdowns that sum to the totals above.
+  initialBreakdown: PurposeBreakdownEntry[];
+  furtherBreakdown: PurposeBreakdownEntry[];
+  payableBreakdown: PlotTypeBreakdownEntry[];
 };
 
 export type SalesPanelSources = {
   bankDepositRefreshedAt: string | null;
   plotSalesRefreshedAt: string | null;
+};
+
+export type PivotMonthlyEntry = {
+  /** YYYY-MM */
+  month: string;
+  starter: number;
+  classic: number;
+  executive: number;
+  special: number;
+  total: number;
 };
 
 export type PlotPivotRow = {
@@ -68,6 +109,15 @@ export type PlotPivotRow = {
   executive: number;
   special: number;
   total: number;
+  /** Per-month plot counts for this location (drill-down). Months asc. */
+  monthly: PivotMonthlyEntry[];
+};
+
+export type LocationMonthlyEntry = {
+  /** YYYY-MM */
+  month: string;
+  payable: number;
+  received: number;
 };
 
 export type RevenueByLocationRow = {
@@ -75,10 +125,13 @@ export type RevenueByLocationRow = {
   payable: number;
   received: number;
   delta: number;
+  /** Per-month payable + received for this location (drill-down). Months asc. */
+  monthly: LocationMonthlyEntry[];
 };
 
 export type SalesPanelData = {
   kpis: SalesKpis;
+  kpiBreakdowns: KpiBreakdowns;
   monthly: SalesMonthBucket[];
   pivot: PlotPivotRow[];
   byLocation: RevenueByLocationRow[];
@@ -91,11 +144,23 @@ export type SalesPanelData = {
 };
 
 const UNKNOWN_LOCATION = 'Unknown / unmapped';
-const PLOT_COL: Record<string, keyof Omit<PlotPivotRow, 'locationName' | 'total'>> = {
+const UNKNOWN_PURPOSE = 'Unknown / unmapped';
+const UNKNOWN_PLOT_TYPE = 'Unparseable';
+
+const PLOT_COL: Record<string, keyof Omit<PivotMonthlyEntry, 'month' | 'total'>> = {
   Starter: 'starter',
   Classic: 'classic',
   Executive: 'executive',
   Special: 'special',
+};
+
+// Canonical sort order for plot types and stages (matches the H1 PDF reading order).
+const PLOT_TYPE_ORDER: Record<string, number> = {
+  Starter: 1,
+  Classic: 2,
+  Executive: 3,
+  Special: 4,
+  [UNKNOWN_PLOT_TYPE]: 99,
 };
 
 export async function loadSalesPanelData(
@@ -108,34 +173,75 @@ export async function loadSalesPanelData(
     fetchSalesByLocationMonthly(range),
   ]);
 
+  // --- Per-month totals (header chart) -------------------------------------
   const monthMap = new Map<string, SalesMonthBucket>();
-  const ensure = (key: string) => {
+  const ensureMonth = (key: string) => {
     let b = monthMap.get(key);
     if (!b) {
-      b = { month: key, initial: 0, further: 0, payable: 0 };
+      b = {
+        month: key,
+        initial: 0,
+        further: 0,
+        payable: 0,
+        initialBreakdown: [],
+        furtherBreakdown: [],
+        payableBreakdown: [],
+      };
       monthMap.set(key, b);
     }
     return b;
   };
 
+  // --- KPI totals + per-purpose breakdown ----------------------------------
   let initialReceived = 0;
   let furtherReceived = 0;
   let feesReceived = 0;
   let bankDepositRefreshedAt: string | null = null;
+  const initialByPurpose = new Map<string, number>();
+  const furtherByPurpose = new Map<string, number>();
+  const feesByPurpose = new Map<string, number>();
+
+  // Per-month per-purpose: month → { purpose → amount } (separate maps per stage)
+  const initialByMonthPurpose = new Map<string, Map<string, number>>();
+  const furtherByMonthPurpose = new Map<string, Map<string, number>>();
+  const addMonthPurpose = (
+    map: Map<string, Map<string, number>>,
+    month: string,
+    purpose: string,
+    amount: number,
+  ) => {
+    let inner = map.get(month);
+    if (!inner) {
+      inner = new Map();
+      map.set(month, inner);
+    }
+    inner.set(purpose, (inner.get(purpose) ?? 0) + amount);
+  };
 
   for (const row of bd) {
     if (!row.txn_date) continue;
     const stage = row.purpose_id ? stages.byId.get(row.purpose_id) ?? 'fee' : 'fee';
+    const purposeName = row.purpose_id
+      ? stages.nameById.get(row.purpose_id) ?? UNKNOWN_PURPOSE
+      : UNKNOWN_PURPOSE;
     const amount = Number(row.amount_received ?? 0);
-    if (stage === 'initial') initialReceived += amount;
-    else if (stage === 'further') furtherReceived += amount;
-    else feesReceived += amount;
+    const monthKey = row.txn_date.slice(0, 7);
 
-    if (stage === 'initial' || stage === 'further') {
-      const key = row.txn_date.slice(0, 7);
-      const bucket = ensure(key);
-      if (stage === 'initial') bucket.initial += amount;
-      else bucket.further += amount;
+    if (stage === 'initial') {
+      initialReceived += amount;
+      initialByPurpose.set(purposeName, (initialByPurpose.get(purposeName) ?? 0) + amount);
+      const bucket = ensureMonth(monthKey);
+      bucket.initial += amount;
+      addMonthPurpose(initialByMonthPurpose, monthKey, purposeName, amount);
+    } else if (stage === 'further') {
+      furtherReceived += amount;
+      furtherByPurpose.set(purposeName, (furtherByPurpose.get(purposeName) ?? 0) + amount);
+      const bucket = ensureMonth(monthKey);
+      bucket.further += amount;
+      addMonthPurpose(furtherByMonthPurpose, monthKey, purposeName, amount);
+    } else {
+      feesReceived += amount;
+      feesByPurpose.set(purposeName, (feesByPurpose.get(purposeName) ?? 0) + amount);
     }
 
     if (row.updated_at && (!bankDepositRefreshedAt || row.updated_at > bankDepositRefreshedAt)) {
@@ -143,11 +249,11 @@ export async function loadSalesPanelData(
     }
   }
 
+  // --- Plot counts + payable + pivot + by-location aggregates --------------
   let plotsSold = 0;
   let totalPayable = 0;
   let plotSalesRefreshedAt: string | null = null;
 
-  // Pivot accumulators keyed by location name.
   const pivotByLoc = new Map<string, PlotPivotRow>();
   const ensurePivot = (name: string): PlotPivotRow => {
     let row = pivotByLoc.get(name);
@@ -159,18 +265,42 @@ export async function loadSalesPanelData(
         executive: 0,
         special: 0,
         total: 0,
+        monthly: [],
       };
       pivotByLoc.set(name, row);
     }
     return row;
   };
 
-  // Revenue-by-location accumulators.
+  // Per-month per-location plot-type counts: location → month → entry
+  const pivotMonthly = new Map<string, Map<string, PivotMonthlyEntry>>();
+  const ensurePivotMonth = (locName: string, month: string): PivotMonthlyEntry => {
+    let monthMapInner = pivotMonthly.get(locName);
+    if (!monthMapInner) {
+      monthMapInner = new Map();
+      pivotMonthly.set(locName, monthMapInner);
+    }
+    let entry = monthMapInner.get(month);
+    if (!entry) {
+      entry = { month, starter: 0, classic: 0, executive: 0, special: 0, total: 0 };
+      monthMapInner.set(month, entry);
+    }
+    return entry;
+  };
+
   const payableByLoc = new Map<string, number>();
+  // Per-month per-location payable for the by-location row drill.
+  const payableByLocMonth = new Map<string, Map<string, number>>();
+  // Plot-type breakdown for total-payable KPI + per-month payable breakdown.
+  const payableByType = new Map<string, { count: number; payable: number }>();
+  const payableByMonthType = new Map<
+    string,
+    Map<string, { count: number; payable: number }>
+  >();
 
   for (const row of ps) {
-    const key = `${row.period_year}-${String(row.period_month).padStart(2, '0')}`;
-    const bucket = ensure(key);
+    const monthKey = `${row.period_year}-${String(row.period_month).padStart(2, '0')}`;
+    const bucket = ensureMonth(monthKey);
     const payable = Number(row.total_amount ?? 0);
     const count = Number(row.plot_count ?? 0);
     bucket.payable += payable;
@@ -181,46 +311,101 @@ export async function loadSalesPanelData(
     }
 
     const locName = row.location?.name ?? UNKNOWN_LOCATION;
-    const typeName = row.plot_type?.name ?? '';
-    const col = PLOT_COL[typeName] ?? 'special';
-    const pivot = ensurePivot(locName);
-    pivot[col] += count;
-    pivot.total += count;
+    const rawTypeName = row.plot_type?.name ?? '';
+    const typeName = (PLOT_COL[rawTypeName] ? rawTypeName : 'Special') as
+      | 'Starter'
+      | 'Classic'
+      | 'Executive'
+      | 'Special';
+    const col = PLOT_COL[typeName];
+
+    // Pivot totals
+    const pivotRow = ensurePivot(locName);
+    pivotRow[col] += count;
+    pivotRow.total += count;
+
+    // Pivot per-month entry
+    const pivotMonthEntry = ensurePivotMonth(locName, monthKey);
+    pivotMonthEntry[col] += count;
+    pivotMonthEntry.total += count;
+
+    // Payable totals + breakdowns
     payableByLoc.set(locName, (payableByLoc.get(locName) ?? 0) + payable);
+    let payableMonthInner = payableByLocMonth.get(locName);
+    if (!payableMonthInner) {
+      payableMonthInner = new Map();
+      payableByLocMonth.set(locName, payableMonthInner);
+    }
+    payableMonthInner.set(monthKey, (payableMonthInner.get(monthKey) ?? 0) + payable);
+
+    const typeAgg = payableByType.get(typeName) ?? { count: 0, payable: 0 };
+    typeAgg.count += count;
+    typeAgg.payable += payable;
+    payableByType.set(typeName, typeAgg);
+
+    let monthTypeInner = payableByMonthType.get(monthKey);
+    if (!monthTypeInner) {
+      monthTypeInner = new Map();
+      payableByMonthType.set(monthKey, monthTypeInner);
+    }
+    const mt = monthTypeInner.get(typeName) ?? { count: 0, payable: 0 };
+    mt.count += count;
+    mt.payable += payable;
+    monthTypeInner.set(typeName, mt);
   }
 
+  // --- Received per location (Bank Deposit) -------------------------------
   const receivedByLoc = new Map<string, number>();
+  const receivedByLocMonth = new Map<string, Map<string, number>>();
   for (const row of sbl) {
     const locName = row.location?.name ?? UNKNOWN_LOCATION;
-    receivedByLoc.set(
-      locName,
-      (receivedByLoc.get(locName) ?? 0) + Number(row.amount_received ?? 0),
-    );
+    const monthKey = `${row.period_year}-${String(row.period_month).padStart(2, '0')}`;
+    const amount = Number(row.amount_received ?? 0);
+    receivedByLoc.set(locName, (receivedByLoc.get(locName) ?? 0) + amount);
+    let inner = receivedByLocMonth.get(locName);
+    if (!inner) {
+      inner = new Map();
+      receivedByLocMonth.set(locName, inner);
+    }
+    inner.set(monthKey, (inner.get(monthKey) ?? 0) + amount);
+  }
+
+  // --- Materialize monthly buckets with drill breakdowns ------------------
+  for (const [month, bucket] of monthMap) {
+    const initInner = initialByMonthPurpose.get(month);
+    if (initInner) bucket.initialBreakdown = sortedBreakdown(initInner);
+    const furInner = furtherByMonthPurpose.get(month);
+    if (furInner) bucket.furtherBreakdown = sortedBreakdown(furInner);
+    const ptInner = payableByMonthType.get(month);
+    if (ptInner) {
+      bucket.payableBreakdown = [...ptInner.entries()]
+        .map(([plotTypeName, v]) => ({ plotTypeName, count: v.count, payable: v.payable }))
+        .sort(plotTypeSort);
+    }
   }
 
   const monthly = [...monthMap.values()].sort((a, b) => a.month.localeCompare(b.month));
+
+  // --- Materialize pivot with per-month drill -----------------------------
+  for (const row of pivotByLoc.values()) {
+    const inner = pivotMonthly.get(row.locationName);
+    if (inner) {
+      row.monthly = [...inner.values()].sort((a, b) => a.month.localeCompare(b.month));
+    }
+  }
   const pivot = [...pivotByLoc.values()].sort((a, b) => b.total - a.total);
 
+  // --- Materialize by-location with monthly drill -------------------------
   const allLocNames = new Set<string>([
     ...payableByLoc.keys(),
     ...receivedByLoc.keys(),
   ]);
 
-  // Partition: location-tagged rows go into the by-location card; the
-  // "Unknown / unmapped" bucket is surfaced as a footnote total instead.
-  // It's almost entirely fees / general deposits with no project on the source
-  // sheet, so showing it as a by-location row would be misleading (received
-  // with no corresponding payable reads as "PAID IN FULL" when really the
-  // payment just doesn't belong to any project).
   let byLocationOtherReceived = 0;
   const byLocation: RevenueByLocationRow[] = [...allLocNames]
     .filter((name) => {
       if (name === UNKNOWN_LOCATION) {
         byLocationOtherReceived += receivedByLoc.get(name) ?? 0;
-        // Note: payable for UNKNOWN bucket should be 0 after migration 017
-        // (Weekly Sales has no unmapped locations now). If it ever isn't,
-        // those rows are still in totalPayable on the KPI — only the
-        // by-location display is being filtered.
         return false;
       }
       return true;
@@ -228,14 +413,41 @@ export async function loadSalesPanelData(
     .map((name) => {
       const payable = payableByLoc.get(name) ?? 0;
       const received = receivedByLoc.get(name) ?? 0;
+      const months = new Set<string>([
+        ...(payableByLocMonth.get(name)?.keys() ?? []),
+        ...(receivedByLocMonth.get(name)?.keys() ?? []),
+      ]);
+      const monthly = [...months]
+        .sort()
+        .map((m) => ({
+          month: m,
+          payable: payableByLocMonth.get(name)?.get(m) ?? 0,
+          received: receivedByLocMonth.get(name)?.get(m) ?? 0,
+        }));
       return {
         locationName: name,
         payable,
         received,
         delta: received - payable,
+        monthly,
       };
     })
     .sort((a, b) => Math.max(b.payable, b.received) - Math.max(a.payable, a.received));
+
+  // --- KPI breakdowns -----------------------------------------------------
+  const kpiBreakdowns: KpiBreakdowns = {
+    plotsSold: [...payableByType.entries()]
+      .map(([plotTypeName, v]) => ({ plotTypeName, count: v.count, payable: v.payable }))
+      .filter((e) => e.count > 0)
+      .sort(plotTypeSort),
+    totalPayable: [...payableByType.entries()]
+      .map(([plotTypeName, v]) => ({ plotTypeName, count: v.count, payable: v.payable }))
+      .filter((e) => e.payable > 0)
+      .sort(plotTypeSort),
+    initialReceived: sortedBreakdown(initialByPurpose),
+    furtherReceived: sortedBreakdown(furtherByPurpose),
+    feesReceived: sortedBreakdown(feesByPurpose),
+  };
 
   return {
     kpis: {
@@ -245,12 +457,26 @@ export async function loadSalesPanelData(
       furtherReceived,
       feesReceived,
     },
+    kpiBreakdowns,
     monthly,
     pivot,
     byLocation,
     byLocationOtherReceived,
     sources: { bankDepositRefreshedAt, plotSalesRefreshedAt },
   };
+}
+
+function sortedBreakdown(map: Map<string, number>): PurposeBreakdownEntry[] {
+  return [...map.entries()]
+    .map(([purposeName, amount]) => ({ purposeName, amount }))
+    .filter((e) => e.amount > 0)
+    .sort((a, b) => b.amount - a.amount);
+}
+
+function plotTypeSort(a: PlotTypeBreakdownEntry, b: PlotTypeBreakdownEntry): number {
+  const ao = PLOT_TYPE_ORDER[a.plotTypeName] ?? 50;
+  const bo = PLOT_TYPE_ORDER[b.plotTypeName] ?? 50;
+  return ao - bo;
 }
 
 type BankDepositRow = {
@@ -261,13 +487,9 @@ type BankDepositRow = {
 };
 
 async function fetchBankDeposits(range: DateRange): Promise<BankDepositRow[]> {
-  // Paginate by 1000-row default in case the date window grows beyond it.
   const rows: BankDepositRow[] = [];
   const pageSize = 1000;
   let from = 0;
-  // RLS-gated; we expect the user to be signed in. anon will get an empty list.
-  // We deliberately filter NULL txn_dates out at the DB rather than in JS.
-  // (`gte/lte` on a nullable column already excludes NULLs.)
   for (;;) {
     const { data, error } = await supabase
       .from('bank_deposits')
@@ -298,9 +520,6 @@ type PlotSalesRow = {
 };
 
 async function fetchPlotSalesMonthly(range: DateRange): Promise<PlotSalesRow[]> {
-  // plot_sales_monthly is tiny (one row per month × location × plot_type).
-  // Fetch year-bounded then filter month bounds in JS — simpler than a CTE.
-  // Joins resolved via PostgREST FK embed: `locations(name)`, `plot_types(name)`.
   const fromYear = Number(range.from.slice(0, 4));
   const toYear = Number(range.to.slice(0, 4));
   const fromMonth = Number(range.from.slice(5, 7));

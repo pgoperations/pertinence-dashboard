@@ -140,3 +140,11 @@ export function IconEyeOff(props: IconProps) {
     </svg>
   );
 }
+
+export function IconChevronRight(props: IconProps) {
+  return (
+    <svg {...base} aria-hidden {...props}>
+      <path d="m9 6 6 6-6 6" />
+    </svg>
+  );
+}

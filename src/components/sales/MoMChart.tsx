@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   Bar,
   CartesianGrid,
@@ -10,7 +11,9 @@ import {
 } from 'recharts';
 import { PanelCard } from '../PanelCard';
 import { StatusChip } from '../StatusChip';
-import { formatNairaCompact, formatMonthShort, formatMonthYear } from '../../lib/format';
+import { BreakdownList, type BreakdownItem } from './BreakdownList';
+import { DrillPanel } from './DrillPanel';
+import { formatNairaCompact, formatMonthShort, formatMonthYear, formatNumber } from '../../lib/format';
 import type { SalesMonthBucket } from '../../lib/queries/sales';
 
 type ChartRow = SalesMonthBucket & {
@@ -30,17 +33,23 @@ export function MoMChart({
   monthly: SalesMonthBucket[];
   loading: boolean;
 }) {
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+
   const data: ChartRow[] = monthly.map((m) => {
     const received = m.initial + m.further;
     return { ...m, received, owed: Math.max(0, m.payable - received) };
   });
 
   const empty = !loading && data.length === 0;
+  const expandedRow = selectedMonth ? data.find((d) => d.month === selectedMonth) ?? null : null;
+
+  const toggleMonth = (month: string) =>
+    setSelectedMonth((cur) => (cur === month ? null : month));
 
   return (
     <PanelCard
       title="Month-on-month received vs payable"
-      subtitle="Initial + Further stacked. Tick line = Payable. Visible gap = unpaid balance."
+      subtitle="Initial + Further stacked. Tick line = Payable. Tap a month chip for that month's breakdown."
       right={<StatusChip tone="sky">Stacked</StatusChip>}
       source="Bank Deposit 2026 LAND (received side) • Weekly Sales 2026 (payable side). Surfaced together, never reconciled."
     >
@@ -64,7 +73,7 @@ export function MoMChart({
                   axisLine={{ stroke: COLOR_GRID }}
                   height={48}
                   interval={0}
-                  tick={(props) => <MonthOwedTick {...props} rows={data} />}
+                  tick={(props) => <MonthOwedTick {...props} rows={data} selected={selectedMonth} />}
                 />
                 <YAxis
                   tickLine={false}
@@ -80,6 +89,11 @@ export function MoMChart({
                   fill={COLOR_INITIAL}
                   name="Initial received"
                   radius={[0, 0, 0, 0]}
+                  onClick={(d: unknown) => {
+                    const month = (d as { payload?: { month?: string } })?.payload?.month;
+                    if (month) toggleMonth(month);
+                  }}
+                  style={{ cursor: 'pointer' }}
                 />
                 <Bar
                   dataKey="further"
@@ -87,6 +101,11 @@ export function MoMChart({
                   fill={COLOR_FURTHER}
                   name="Further received"
                   radius={[4, 4, 0, 0]}
+                  onClick={(d: unknown) => {
+                    const month = (d as { payload?: { month?: string } })?.payload?.month;
+                    if (month) toggleMonth(month);
+                  }}
+                  style={{ cursor: 'pointer' }}
                 />
                 <Line
                   type="stepAfter"
@@ -104,9 +123,78 @@ export function MoMChart({
           </div>
 
           <Legend />
+
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {data.map((d) => {
+              const isSelected = d.month === selectedMonth;
+              return (
+                <button
+                  key={d.month}
+                  type="button"
+                  onClick={() => toggleMonth(d.month)}
+                  aria-pressed={isSelected}
+                  className={[
+                    'rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset transition-colors',
+                    'focus:outline-none focus:ring-2 focus:ring-accent cursor-pointer',
+                    isSelected
+                      ? 'bg-accent text-white ring-accent'
+                      : 'bg-slate-50 text-slate-700 ring-slate-200 hover:bg-white',
+                  ].join(' ')}
+                >
+                  {formatMonthShort(d.month)}
+                </button>
+              );
+            })}
+          </div>
+
+          {expandedRow && (
+            <DrillPanel title={`${formatMonthYear(expandedRow.month)} — where the month's numbers came from`}>
+              <MonthDrill row={expandedRow} />
+            </DrillPanel>
+          )}
         </>
       )}
     </PanelCard>
+  );
+}
+
+function MonthDrill({ row }: { row: ChartRow }) {
+  const initial: BreakdownItem[] = row.initialBreakdown.map((e) => ({
+    label: e.purposeName,
+    display: formatNairaCompact(e.amount),
+    weight: e.amount,
+  }));
+  const further: BreakdownItem[] = row.furtherBreakdown.map((e) => ({
+    label: e.purposeName,
+    display: formatNairaCompact(e.amount),
+    weight: e.amount,
+  }));
+  const payable: BreakdownItem[] = row.payableBreakdown.map((e) => ({
+    label: `${e.plotTypeName} (${formatNumber(e.count)})`,
+    display: formatNairaCompact(e.payable),
+    weight: e.payable,
+  }));
+  return (
+    <div className="grid gap-4 md:grid-cols-3">
+      <div>
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-sky-800">
+          Initial received • {formatNairaCompact(row.initial)}
+        </div>
+        <BreakdownList items={initial} emptyMessage="None this month." />
+      </div>
+      <div>
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
+          Further received • {formatNairaCompact(row.further)}
+        </div>
+        <BreakdownList items={further} emptyMessage="None this month." />
+      </div>
+      <div>
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Payable • {formatNairaCompact(row.payable)}
+        </div>
+        <BreakdownList items={payable} emptyMessage="No contracts this month." />
+      </div>
+    </div>
   );
 }
 
@@ -115,14 +203,16 @@ type TickProps = {
   y?: number | string;
   payload?: { value: string };
   rows: ChartRow[];
+  selected: string | null;
 };
 
-function MonthOwedTick({ x = 0, y = 0, payload, rows }: TickProps) {
+function MonthOwedTick({ x = 0, y = 0, payload, rows, selected }: TickProps) {
   if (!payload) return null;
   const row = rows.find((r) => r.month === payload.value);
   const owed = row?.owed ?? 0;
   const xn = typeof x === 'number' ? x : Number(x) || 0;
   const yn = typeof y === 'number' ? y : Number(y) || 0;
+  const isSelected = selected === payload.value;
   return (
     <g transform={`translate(${xn}, ${yn})`}>
       <text
@@ -130,9 +220,9 @@ function MonthOwedTick({ x = 0, y = 0, payload, rows }: TickProps) {
         y={0}
         dy={12}
         textAnchor="middle"
-        fill="#475569"
+        fill={isSelected ? '#0369A1' : '#475569'}
         fontSize={11}
-        fontWeight={500}
+        fontWeight={isSelected ? 700 : 500}
       >
         {formatMonthShort(payload.value)}
       </text>
@@ -232,6 +322,11 @@ function MoMTooltip({
               </td>
             </tr>
           )}
+          <tr>
+            <td colSpan={2} className="pt-1 text-[10px] italic text-slate-400">
+              tap bar / chip below for breakdown
+            </td>
+          </tr>
         </tbody>
       </table>
     </div>

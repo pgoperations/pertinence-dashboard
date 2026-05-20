@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { PanelCard } from '../PanelCard';
 import { StatusChip } from '../StatusChip';
-import { formatNairaCompact } from '../../lib/format';
+import { IconChevronRight } from '../icons';
+import { DrillPanel } from './DrillPanel';
+import { formatNairaCompact, formatMonthYear } from '../../lib/format';
 import type { RevenueByLocationRow } from '../../lib/queries/sales';
 
 const TOP_N = 8;
@@ -19,6 +21,9 @@ export function RevenueByLocation({
   loading: boolean;
 }) {
   const [showAll, setShowAll] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  const toggle = (loc: string) => setExpanded((cur) => (cur === loc ? null : loc));
 
   if (!loading && rows.length === 0) {
     return (
@@ -47,7 +52,7 @@ export function RevenueByLocation({
   return (
     <PanelCard
       title="Revenue by location"
-      subtitle="Payable (Weekly Sales) vs Received (Bank Deposit). Top 8 shown by default."
+      subtitle="Payable (Weekly Sales) vs Received (Bank Deposit). Tap a row for its monthly trend."
       right={<StatusChip tone="sky">Side-by-side</StatusChip>}
       source="Sources surfaced together — never reconciled. Delta = Received − Payable. Negative delta means cash still owed."
     >
@@ -61,7 +66,13 @@ export function RevenueByLocation({
               </li>
             ))
           : visible.map((r) => (
-              <LocationRow key={r.locationName} row={r} max={max} />
+              <LocationRow
+                key={r.locationName}
+                row={r}
+                max={max}
+                isOpen={expanded === r.locationName}
+                onToggle={() => toggle(r.locationName)}
+              />
             ))}
       </ul>
 
@@ -105,40 +116,119 @@ export function RevenueByLocation({
   );
 }
 
-function LocationRow({ row, max }: { row: RevenueByLocationRow; max: number }) {
+function LocationRow({
+  row,
+  max,
+  isOpen,
+  onToggle,
+}: {
+  row: RevenueByLocationRow;
+  max: number;
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
   const payablePct = (row.payable / max) * 100;
   const receivedPct = (row.received / max) * 100;
   const owed = Math.max(0, row.payable - row.received);
 
   return (
     <li>
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-sm font-medium text-slate-900">{row.locationName}</span>
-        {owed > 0 ? (
-          <span className="text-[11px] uppercase tracking-wide text-slate-500">
-            Owed <span className="tabular-nums text-slate-700">{formatNairaCompact(owed)}</span>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={isOpen}
+        aria-controls={`rev-drill-${slug(row.locationName)}`}
+        className="block w-full rounded-lg px-1 py-1 text-left focus:outline-none focus:ring-2 focus:ring-accent cursor-pointer"
+      >
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-900">
+            <IconChevronRight
+              className={[
+                'h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform',
+                isOpen ? 'rotate-90 text-accent' : '',
+              ].join(' ')}
+            />
+            {row.locationName}
           </span>
-        ) : (
-          <span className="text-[11px] uppercase tracking-wide text-emerald-700">
-            Paid in full
-          </span>
-        )}
-      </div>
-      <div className="mt-2 space-y-1.5">
-        <Bar
-          label="Payable"
-          color={COLOR_PAYABLE}
-          pct={payablePct}
-          amount={formatNairaCompact(row.payable)}
-        />
-        <Bar
-          label="Received"
-          color={COLOR_RECEIVED}
-          pct={receivedPct}
-          amount={formatNairaCompact(row.received)}
-        />
-      </div>
+          {owed > 0 ? (
+            <span className="text-[11px] uppercase tracking-wide text-slate-500">
+              Owed <span className="tabular-nums text-slate-700">{formatNairaCompact(owed)}</span>
+            </span>
+          ) : (
+            <span className="text-[11px] uppercase tracking-wide text-emerald-700">
+              Paid in full
+            </span>
+          )}
+        </div>
+        <div className="mt-2 space-y-1.5">
+          <Bar
+            label="Payable"
+            color={COLOR_PAYABLE}
+            pct={payablePct}
+            amount={formatNairaCompact(row.payable)}
+          />
+          <Bar
+            label="Received"
+            color={COLOR_RECEIVED}
+            pct={receivedPct}
+            amount={formatNairaCompact(row.received)}
+          />
+        </div>
+      </button>
+
+      {isOpen && (
+        <div id={`rev-drill-${slug(row.locationName)}`}>
+          <DrillPanel title={`${row.locationName} — month-by-month`}>
+            <MonthlyTrend row={row} />
+          </DrillPanel>
+        </div>
+      )}
     </li>
+  );
+}
+
+function MonthlyTrend({ row }: { row: RevenueByLocationRow }) {
+  if (row.monthly.length === 0) {
+    return <p className="text-xs text-slate-500">No monthly entries.</p>;
+  }
+  const monthMax = Math.max(
+    1,
+    ...row.monthly.map((m) => Math.max(m.payable, m.received)),
+  );
+  return (
+    <ul className="space-y-2.5">
+      {row.monthly.map((m) => {
+        const monthOwed = Math.max(0, m.payable - m.received);
+        return (
+          <li key={m.month} className="space-y-1">
+            <div className="flex items-baseline justify-between text-xs">
+              <span className="text-slate-700">{formatMonthYear(m.month)}</span>
+              {monthOwed > 0 ? (
+                <span className="text-[11px] text-slate-500 tabular-nums">
+                  Owed {formatNairaCompact(monthOwed)}
+                </span>
+              ) : m.received > 0 ? (
+                <span className="text-[11px] text-emerald-700">Paid in full</span>
+              ) : null}
+            </div>
+            <Bar
+              label="Payable"
+              color={COLOR_PAYABLE}
+              pct={(m.payable / monthMax) * 100}
+              amount={formatNairaCompact(m.payable)}
+              compact
+            />
+            <Bar
+              label="Received"
+              color={COLOR_RECEIVED}
+              pct={(m.received / monthMax) * 100}
+              amount={formatNairaCompact(m.received)}
+              compact
+            />
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -147,26 +237,41 @@ function Bar({
   color,
   pct,
   amount,
+  compact,
 }: {
   label: string;
   color: string;
   pct: number;
   amount: string;
+  compact?: boolean;
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="w-16 shrink-0 text-[10px] font-medium uppercase tracking-wide text-slate-500">
+      <span className={[
+        'shrink-0 font-medium uppercase tracking-wide text-slate-500',
+        compact ? 'w-14 text-[9px]' : 'w-16 text-[10px]',
+      ].join(' ')}>
         {label}
       </span>
-      <div className="relative h-3 flex-1 overflow-hidden rounded-full bg-slate-100">
+      <div className={[
+        'relative flex-1 overflow-hidden rounded-full bg-slate-100',
+        compact ? 'h-2' : 'h-3',
+      ].join(' ')}>
         <span
           className="absolute inset-y-0 left-0 rounded-full"
           style={{ width: `${pct}%`, backgroundColor: color }}
         />
       </div>
-      <span className="w-16 shrink-0 text-right text-[11px] tabular-nums text-slate-700">
+      <span className={[
+        'shrink-0 text-right tabular-nums text-slate-700',
+        compact ? 'w-14 text-[10px]' : 'w-16 text-[11px]',
+      ].join(' ')}>
         {amount}
       </span>
     </div>
   );
+}
+
+function slug(s: string) {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }

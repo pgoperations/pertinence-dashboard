@@ -62,6 +62,13 @@ export default function SalesPage() {
     furtherReceived: 0,
     feesReceived: 0,
   };
+  const kpiBreakdowns = data?.kpiBreakdowns ?? {
+    plotsSold: [],
+    totalPayable: [],
+    initialReceived: [],
+    furtherReceived: [],
+    feesReceived: [],
+  };
   const monthly = data?.monthly ?? [];
   const pivot = data?.pivot ?? [];
   const byLocation = data?.byLocation ?? [];
@@ -82,7 +89,12 @@ export default function SalesPage() {
           </StatusBanner>
         )}
 
-        <KpiStrip kpis={kpis} sources={sources} loading={loading} />
+        <KpiStrip
+          kpis={kpis}
+          breakdowns={kpiBreakdowns}
+          sources={sources}
+          loading={loading}
+        />
         <MoMChart monthly={monthly} loading={loading} />
         <PlotSizePivot pivot={pivot} loading={loading} />
         <RevenueByLocation
