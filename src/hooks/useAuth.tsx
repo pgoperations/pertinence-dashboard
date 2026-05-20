@@ -20,6 +20,22 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function withTimeout<T>(promise: PromiseLike<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`auth check timed out after ${ms}ms`)), ms);
+    Promise.resolve(promise).then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
+
 async function loadProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from('profiles')
@@ -42,18 +58,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (!mounted) return;
-      setSession(data.session);
-      if (data.session?.user) {
-        const p = await loadProfile(data.session.user.id);
+    // If getSession() hangs (corporate proxy blocking *.supabase.co, stale refresh
+    // token that the SDK retries forever, etc.) we still need the app to bail to
+    // the sign-in screen instead of sitting on "Loading…" indefinitely. Race the
+    // SDK call against an 8-second timeout and fall through on reject.
+    withTimeout(supabase.auth.getSession(), 8000)
+      .then(async ({ data }) => {
         if (!mounted) return;
-        setProfile(p);
-        setStatus('signed-in');
-      } else {
+        setSession(data.session);
+        if (data.session?.user) {
+          const p = await loadProfile(data.session.user.id);
+          if (!mounted) return;
+          setProfile(p);
+          setStatus('signed-in');
+        } else {
+          setStatus('signed-out');
+        }
+      })
+      .catch((err: unknown) => {
+        if (!mounted) return;
+        console.error('[auth] getSession failed or timed out — falling through to signed-out', err);
+        setSession(null);
+        setProfile(null);
         setStatus('signed-out');
-      }
-    });
+      });
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
       if (!mounted) return;

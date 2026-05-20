@@ -9,4 +9,33 @@ if (!url || !anonKey) {
   );
 }
 
-export const supabase = createClient(url, anonKey);
+// In-memory lock replacement for the default navigator.locks-based one. The
+// browser Lock API can hang indefinitely in certain Chrome profiles (extension
+// interference, orphaned cross-tab locks) — observed 2026-05-20. For a
+// single-tab dashboard a per-tab in-memory serializer is sufficient; the
+// trade-off is that two simultaneously open tabs may race during token refresh
+// (worst case: one tab gets a transient 401 and recovers via retry).
+const lockTails = new Map<string, Promise<void>>();
+async function inMemoryLock<R>(
+  name: string,
+  _acquireTimeout: number,
+  fn: () => Promise<R>,
+): Promise<R> {
+  const prev = lockTails.get(name) ?? Promise.resolve();
+  let release!: () => void;
+  const next = new Promise<void>((res) => (release = res));
+  lockTails.set(name, prev.then(() => next));
+  try {
+    await prev;
+    return await fn();
+  } finally {
+    release();
+    if (lockTails.get(name) === next) lockTails.delete(name);
+  }
+}
+
+export const supabase = createClient(url, anonKey, {
+  auth: {
+    lock: inMemoryLock,
+  },
+});
