@@ -1,44 +1,144 @@
+import { useEffect, useState } from 'react';
 import { SectionHeading } from '../components/SectionHeading';
 import { StatusBanner } from '../components/StatusBanner';
 import { PlaceholderCard } from '../components/PlaceholderCard';
+import { KpiStrip } from '../components/sales/KpiStrip';
+import { MoMChart } from '../components/sales/MoMChart';
+import { useDateRange } from '../hooks/useDateRange';
+import {
+  loadPurposeStages,
+  loadSalesPanelData,
+  type PurposeStages,
+  type SalesPanelData,
+} from '../lib/queries/sales';
 
 export default function SalesPage() {
+  const { range } = useDateRange();
+  const [stages, setStages] = useState<PurposeStages | null>(null);
+  const [data, setData] = useState<SalesPanelData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadPurposeStages()
+      .then((s) => {
+        if (!cancelled) setStages(s);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(messageOf(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!stages) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    loadSalesPanelData(range, stages)
+      .then((d) => {
+        if (!cancelled) setData(d);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(messageOf(err));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [range, stages]);
+
+  const kpis = data?.kpis ?? {
+    plotsSold: 0,
+    totalPayable: 0,
+    initialReceived: 0,
+    furtherReceived: 0,
+    feesReceived: 0,
+  };
+  const monthly = data?.monthly ?? [];
+  const sources = data?.sources ?? {
+    bankDepositRefreshedAt: null,
+    plotSalesRefreshedAt: null,
+  };
+
   return (
     <>
       <SectionHeading title="Sales (Land)" subtitle="Plots, revenue, realtor attribution" />
 
       <div className="grid gap-4 md:gap-5">
-        <StatusBanner tone="ready" title="Bank Deposit ingest live">
-          448 transactions ingested across 126 location-month buckets. Weekly Sales and Customer
-          File ingests pending — needed before plot counts and customer-level sales appear.
-        </StatusBanner>
+        {error && (
+          <StatusBanner tone="pending" title="Could not load sales data">
+            {error}
+          </StatusBanner>
+        )}
 
-        <div className="grid gap-4 md:grid-cols-2 md:gap-5">
+        <KpiStrip kpis={kpis} sources={sources} loading={loading} />
+        <MoMChart monthly={monthly} loading={loading} />
+
+        <PlaceholderCard
+          title="Plots sold by location × size"
+          description="Pivot from Weekly Sales — Commit 2."
+        >
+          <div className="grid h-32 place-items-center rounded-lg bg-brand-100 text-xs text-brand-500">
+            Coming next
+          </div>
+        </PlaceholderCard>
+
+        <PlaceholderCard
+          title="Revenue by location"
+          description="Top 8 with payable vs received bars — Commit 2."
+        >
+          <div className="grid h-32 place-items-center rounded-lg bg-brand-100 text-xs text-brand-500">
+            Coming next
+          </div>
+        </PlaceholderCard>
+
+        <PlaceholderCard
+          title="Quarter pair (Q1 vs Q2)"
+          description="Paired horizontal bars per location — Commit 3."
+        >
+          <div className="grid h-32 place-items-center rounded-lg bg-brand-100 text-xs text-brand-500">
+            Coming after pivot + revenue cards
+          </div>
+        </PlaceholderCard>
+
+        <div className="grid gap-4 md:grid-cols-3 md:gap-5">
           <PlaceholderCard
-            title="Revenue by location"
-            description="From Bank Deposit 2026 LAND — the financial source of truth."
+            title="OneApp Customer Interaction"
+            description="Awaiting AWS API access (Phase 2)."
           >
-            <div className="h-40 rounded-lg bg-brand-100" aria-hidden />
+            <div className="grid h-24 place-items-center rounded-lg bg-brand-100 text-xs text-brand-500">
+              Data source pending
+            </div>
           </PlaceholderCard>
           <PlaceholderCard
-            title="Plots sold by location × size"
-            description="From Weekly Sales — pending ingest."
+            title="Year-on-year (2024 vs 2025)"
+            description="2025 source data not yet ingested."
           >
-            <div className="grid h-40 place-items-center rounded-lg bg-brand-100 text-xs text-brand-500">
+            <div className="grid h-24 place-items-center rounded-lg bg-brand-100 text-xs text-brand-500">
+              Data source pending
+            </div>
+          </PlaceholderCard>
+          <PlaceholderCard
+            title="Realtor sale tiers"
+            description="Per-customer realtor attribution pending."
+          >
+            <div className="grid h-24 place-items-center rounded-lg bg-brand-100 text-xs text-brand-500">
               Data source pending
             </div>
           </PlaceholderCard>
         </div>
-
-        <PlaceholderCard
-          title="OneApp performance"
-          description="AWS-backed. Phase 2."
-        >
-          <div className="grid h-32 place-items-center rounded-lg bg-brand-100 text-xs text-brand-500">
-            Data source pending
-          </div>
-        </PlaceholderCard>
       </div>
     </>
   );
+}
+
+function messageOf(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return 'Unknown error.';
 }
