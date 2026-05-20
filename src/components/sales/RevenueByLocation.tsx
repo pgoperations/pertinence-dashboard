@@ -11,9 +11,11 @@ const COLOR_RECEIVED = '#0369A1';
 
 export function RevenueByLocation({
   rows,
+  otherReceived,
   loading,
 }: {
   rows: RevenueByLocationRow[];
+  otherReceived: number;
   loading: boolean;
 }) {
   const [showAll, setShowAll] = useState(false);
@@ -86,6 +88,18 @@ export function RevenueByLocation({
             {showAll ? 'Show fewer' : `Show all ${rows.length}`}
           </button>
         </div>
+      )}
+
+      {!loading && otherReceived > 0 && (
+        <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
+          Plus{' '}
+          <span className="font-semibold tabular-nums text-slate-700">
+            {formatNairaCompact(otherReceived)}
+          </span>{' '}
+          received without a location tag — typically fees &amp; general deposits
+          (Allocation, Security, Change of Ownership, etc.) that don&rsquo;t belong to a
+          specific land project.
+        </p>
       )}
     </PanelCard>
   );

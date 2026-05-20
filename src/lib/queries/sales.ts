@@ -82,6 +82,11 @@ export type SalesPanelData = {
   monthly: SalesMonthBucket[];
   pivot: PlotPivotRow[];
   byLocation: RevenueByLocationRow[];
+  /** Sum of Bank Deposit amount_received with no associated location.
+   *  Typically fees & general deposits (Allocation Fee, Security Fee, etc.).
+   *  Surfaced as a footnote on the by-location card rather than as a "PAID IN FULL"
+   *  row, which would be misleading — it's not paid in full, it just has no location. */
+  byLocationOtherReceived: number;
   sources: SalesPanelSources;
 };
 
@@ -200,7 +205,26 @@ export async function loadSalesPanelData(
     ...payableByLoc.keys(),
     ...receivedByLoc.keys(),
   ]);
+
+  // Partition: location-tagged rows go into the by-location card; the
+  // "Unknown / unmapped" bucket is surfaced as a footnote total instead.
+  // It's almost entirely fees / general deposits with no project on the source
+  // sheet, so showing it as a by-location row would be misleading (received
+  // with no corresponding payable reads as "PAID IN FULL" when really the
+  // payment just doesn't belong to any project).
+  let byLocationOtherReceived = 0;
   const byLocation: RevenueByLocationRow[] = [...allLocNames]
+    .filter((name) => {
+      if (name === UNKNOWN_LOCATION) {
+        byLocationOtherReceived += receivedByLoc.get(name) ?? 0;
+        // Note: payable for UNKNOWN bucket should be 0 after migration 017
+        // (Weekly Sales has no unmapped locations now). If it ever isn't,
+        // those rows are still in totalPayable on the KPI — only the
+        // by-location display is being filtered.
+        return false;
+      }
+      return true;
+    })
     .map((name) => {
       const payable = payableByLoc.get(name) ?? 0;
       const received = receivedByLoc.get(name) ?? 0;
@@ -224,6 +248,7 @@ export async function loadSalesPanelData(
     monthly,
     pivot,
     byLocation,
+    byLocationOtherReceived,
     sources: { bankDepositRefreshedAt, plotSalesRefreshedAt },
   };
 }

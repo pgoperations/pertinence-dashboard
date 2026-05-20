@@ -65,6 +65,7 @@ export default function SalesPage() {
   const monthly = data?.monthly ?? [];
   const pivot = data?.pivot ?? [];
   const byLocation = data?.byLocation ?? [];
+  const byLocationOtherReceived = data?.byLocationOtherReceived ?? 0;
   const sources = data?.sources ?? {
     bankDepositRefreshedAt: null,
     plotSalesRefreshedAt: null,
@@ -84,7 +85,11 @@ export default function SalesPage() {
         <KpiStrip kpis={kpis} sources={sources} loading={loading} />
         <MoMChart monthly={monthly} loading={loading} />
         <PlotSizePivot pivot={pivot} loading={loading} />
-        <RevenueByLocation rows={byLocation} loading={loading} />
+        <RevenueByLocation
+          rows={byLocation}
+          otherReceived={byLocationOtherReceived}
+          loading={loading}
+        />
 
         <PlaceholderCard
           title="Quarter pair (Q1 vs Q2)"
