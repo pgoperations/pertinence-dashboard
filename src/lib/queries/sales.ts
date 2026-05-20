@@ -61,19 +61,46 @@ export type SalesPanelSources = {
   plotSalesRefreshedAt: string | null;
 };
 
+export type PlotPivotRow = {
+  locationName: string;
+  starter: number;
+  classic: number;
+  executive: number;
+  special: number;
+  total: number;
+};
+
+export type RevenueByLocationRow = {
+  locationName: string;
+  payable: number;
+  received: number;
+  delta: number;
+};
+
 export type SalesPanelData = {
   kpis: SalesKpis;
   monthly: SalesMonthBucket[];
+  pivot: PlotPivotRow[];
+  byLocation: RevenueByLocationRow[];
   sources: SalesPanelSources;
+};
+
+const UNKNOWN_LOCATION = 'Unknown / unmapped';
+const PLOT_COL: Record<string, keyof Omit<PlotPivotRow, 'locationName' | 'total'>> = {
+  Starter: 'starter',
+  Classic: 'classic',
+  Executive: 'executive',
+  Special: 'special',
 };
 
 export async function loadSalesPanelData(
   range: DateRange,
   stages: PurposeStages,
 ): Promise<SalesPanelData> {
-  const [bd, ps] = await Promise.all([
+  const [bd, ps, sbl] = await Promise.all([
     fetchBankDeposits(range),
     fetchPlotSalesMonthly(range),
+    fetchSalesByLocationMonthly(range),
   ]);
 
   const monthMap = new Map<string, SalesMonthBucket>();
@@ -115,19 +142,76 @@ export async function loadSalesPanelData(
   let totalPayable = 0;
   let plotSalesRefreshedAt: string | null = null;
 
+  // Pivot accumulators keyed by location name.
+  const pivotByLoc = new Map<string, PlotPivotRow>();
+  const ensurePivot = (name: string): PlotPivotRow => {
+    let row = pivotByLoc.get(name);
+    if (!row) {
+      row = {
+        locationName: name,
+        starter: 0,
+        classic: 0,
+        executive: 0,
+        special: 0,
+        total: 0,
+      };
+      pivotByLoc.set(name, row);
+    }
+    return row;
+  };
+
+  // Revenue-by-location accumulators.
+  const payableByLoc = new Map<string, number>();
+
   for (const row of ps) {
     const key = `${row.period_year}-${String(row.period_month).padStart(2, '0')}`;
     const bucket = ensure(key);
     const payable = Number(row.total_amount ?? 0);
+    const count = Number(row.plot_count ?? 0);
     bucket.payable += payable;
-    plotsSold += Number(row.plot_count ?? 0);
+    plotsSold += count;
     totalPayable += payable;
     if (row.refreshed_at && (!plotSalesRefreshedAt || row.refreshed_at > plotSalesRefreshedAt)) {
       plotSalesRefreshedAt = row.refreshed_at;
     }
+
+    const locName = row.location?.name ?? UNKNOWN_LOCATION;
+    const typeName = row.plot_type?.name ?? '';
+    const col = PLOT_COL[typeName] ?? 'special';
+    const pivot = ensurePivot(locName);
+    pivot[col] += count;
+    pivot.total += count;
+    payableByLoc.set(locName, (payableByLoc.get(locName) ?? 0) + payable);
+  }
+
+  const receivedByLoc = new Map<string, number>();
+  for (const row of sbl) {
+    const locName = row.location?.name ?? UNKNOWN_LOCATION;
+    receivedByLoc.set(
+      locName,
+      (receivedByLoc.get(locName) ?? 0) + Number(row.amount_received ?? 0),
+    );
   }
 
   const monthly = [...monthMap.values()].sort((a, b) => a.month.localeCompare(b.month));
+  const pivot = [...pivotByLoc.values()].sort((a, b) => b.total - a.total);
+
+  const allLocNames = new Set<string>([
+    ...payableByLoc.keys(),
+    ...receivedByLoc.keys(),
+  ]);
+  const byLocation: RevenueByLocationRow[] = [...allLocNames]
+    .map((name) => {
+      const payable = payableByLoc.get(name) ?? 0;
+      const received = receivedByLoc.get(name) ?? 0;
+      return {
+        locationName: name,
+        payable,
+        received,
+        delta: received - payable,
+      };
+    })
+    .sort((a, b) => Math.max(b.payable, b.received) - Math.max(a.payable, a.received));
 
   return {
     kpis: {
@@ -138,6 +222,8 @@ export async function loadSalesPanelData(
       feesReceived,
     },
     monthly,
+    pivot,
+    byLocation,
     sources: { bankDepositRefreshedAt, plotSalesRefreshedAt },
   };
 }
@@ -174,17 +260,22 @@ async function fetchBankDeposits(range: DateRange): Promise<BankDepositRow[]> {
   return rows;
 }
 
+type EmbeddedName = { name: string } | null;
+
 type PlotSalesRow = {
   period_year: number;
   period_month: number;
   plot_count: number | null;
   total_amount: number | string | null;
   refreshed_at: string | null;
+  location: EmbeddedName;
+  plot_type: EmbeddedName;
 };
 
 async function fetchPlotSalesMonthly(range: DateRange): Promise<PlotSalesRow[]> {
   // plot_sales_monthly is tiny (one row per month × location × plot_type).
   // Fetch year-bounded then filter month bounds in JS — simpler than a CTE.
+  // Joins resolved via PostgREST FK embed: `locations(name)`, `plot_types(name)`.
   const fromYear = Number(range.from.slice(0, 4));
   const toYear = Number(range.to.slice(0, 4));
   const fromMonth = Number(range.from.slice(5, 7));
@@ -192,13 +283,43 @@ async function fetchPlotSalesMonthly(range: DateRange): Promise<PlotSalesRow[]> 
 
   const { data, error } = await supabase
     .from('plot_sales_monthly')
-    .select('period_year, period_month, plot_count, total_amount, refreshed_at')
+    .select(
+      'period_year, period_month, plot_count, total_amount, refreshed_at, location:locations(name), plot_type:plot_types(name)',
+    )
     .gte('period_year', fromYear)
     .lte('period_year', toYear);
   if (error) throw error;
 
-  return (data ?? []).filter((r) => {
+  return ((data ?? []) as unknown as PlotSalesRow[]).filter((r) => {
     const ym = r.period_year * 100 + r.period_month;
     return ym >= fromYear * 100 + fromMonth && ym <= toYear * 100 + toMonth;
-  }) as PlotSalesRow[];
+  });
+}
+
+type SalesByLocationRow = {
+  period_year: number;
+  period_month: number;
+  amount_received: number | string | null;
+  location: EmbeddedName;
+};
+
+async function fetchSalesByLocationMonthly(
+  range: DateRange,
+): Promise<SalesByLocationRow[]> {
+  const fromYear = Number(range.from.slice(0, 4));
+  const toYear = Number(range.to.slice(0, 4));
+  const fromMonth = Number(range.from.slice(5, 7));
+  const toMonth = Number(range.to.slice(5, 7));
+
+  const { data, error } = await supabase
+    .from('sales_by_location_monthly')
+    .select('period_year, period_month, amount_received, location:locations(name)')
+    .gte('period_year', fromYear)
+    .lte('period_year', toYear);
+  if (error) throw error;
+
+  return ((data ?? []) as unknown as SalesByLocationRow[]).filter((r) => {
+    const ym = r.period_year * 100 + r.period_month;
+    return ym >= fromYear * 100 + fromMonth && ym <= toYear * 100 + toMonth;
+  });
 }

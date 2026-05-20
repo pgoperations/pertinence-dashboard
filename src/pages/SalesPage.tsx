@@ -4,6 +4,8 @@ import { StatusBanner } from '../components/StatusBanner';
 import { PlaceholderCard } from '../components/PlaceholderCard';
 import { KpiStrip } from '../components/sales/KpiStrip';
 import { MoMChart } from '../components/sales/MoMChart';
+import { PlotSizePivot } from '../components/sales/PlotSizePivot';
+import { RevenueByLocation } from '../components/sales/RevenueByLocation';
 import { useDateRange } from '../hooks/useDateRange';
 import {
   loadPurposeStages,
@@ -61,6 +63,8 @@ export default function SalesPage() {
     feesReceived: 0,
   };
   const monthly = data?.monthly ?? [];
+  const pivot = data?.pivot ?? [];
+  const byLocation = data?.byLocation ?? [];
   const sources = data?.sources ?? {
     bankDepositRefreshedAt: null,
     plotSalesRefreshedAt: null,
@@ -79,31 +83,15 @@ export default function SalesPage() {
 
         <KpiStrip kpis={kpis} sources={sources} loading={loading} />
         <MoMChart monthly={monthly} loading={loading} />
-
-        <PlaceholderCard
-          title="Plots sold by location × size"
-          description="Pivot from Weekly Sales — Commit 2."
-        >
-          <div className="grid h-32 place-items-center rounded-lg bg-brand-100 text-xs text-brand-500">
-            Coming next
-          </div>
-        </PlaceholderCard>
-
-        <PlaceholderCard
-          title="Revenue by location"
-          description="Top 8 with payable vs received bars — Commit 2."
-        >
-          <div className="grid h-32 place-items-center rounded-lg bg-brand-100 text-xs text-brand-500">
-            Coming next
-          </div>
-        </PlaceholderCard>
+        <PlotSizePivot pivot={pivot} loading={loading} />
+        <RevenueByLocation rows={byLocation} loading={loading} />
 
         <PlaceholderCard
           title="Quarter pair (Q1 vs Q2)"
           description="Paired horizontal bars per location — Commit 3."
         >
           <div className="grid h-32 place-items-center rounded-lg bg-brand-100 text-xs text-brand-500">
-            Coming after pivot + revenue cards
+            Coming next
           </div>
         </PlaceholderCard>
 

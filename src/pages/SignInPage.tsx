@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { IconEye, IconEyeOff } from '../components/icons';
 
 type LocationState = { from?: string } | null;
 
@@ -9,6 +10,7 @@ export default function SignInPage() {
   const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -58,15 +60,30 @@ export default function SignInPage() {
             <label htmlFor="password" className="block text-sm font-medium text-brand-700">
               Password
             </label>
-            <input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-brand-300 bg-white px-3 py-2.5 text-base text-brand-900 focus:border-accent focus:ring-1 focus:ring-accent"
-            />
+            <div className="relative">
+              <input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-lg border border-brand-300 bg-white px-3 py-2.5 pr-11 text-base text-brand-900 focus:border-accent focus:ring-1 focus:ring-accent"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((s) => !s)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showPassword}
+                className="absolute inset-y-0 right-0 grid w-11 place-items-center text-brand-500 hover:text-brand-700 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-1 rounded-r-lg cursor-pointer"
+              >
+                {showPassword ? (
+                  <IconEyeOff className="h-5 w-5" />
+                ) : (
+                  <IconEye className="h-5 w-5" />
+                )}
+              </button>
+            </div>
           </div>
 
           {error ? (
