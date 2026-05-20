@@ -34,8 +34,16 @@ async function inMemoryLock<R>(
   }
 }
 
+// Use sessionStorage (not the SDK default of localStorage) so the session is
+// scoped to the browser tab: surviving a refresh but wiped when the tab closes.
+// Closing and reopening the tab → fresh sign-in required, by design. Trade-off
+// flagged 2026-05-20: duplicating to a second tab also requires re-login, since
+// sessionStorage is per-tab. Acceptable for a single-tab supervisor dashboard.
 export const supabase = createClient(url, anonKey, {
   auth: {
     lock: inMemoryLock,
+    storage: window.sessionStorage,
+    persistSession: true,
+    autoRefreshToken: true,
   },
 });

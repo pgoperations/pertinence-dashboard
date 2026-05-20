@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { SectionHeading } from '../components/SectionHeading';
 import { StatusBanner } from '../components/StatusBanner';
-import { PlaceholderCard } from '../components/PlaceholderCard';
 import { KpiStrip } from '../components/sales/KpiStrip';
 import { MoMChart } from '../components/sales/MoMChart';
 import { PlotSizePivot } from '../components/sales/PlotSizePivot';
 import { RevenueByLocation } from '../components/sales/RevenueByLocation';
+import { QuarterPair } from '../components/sales/QuarterPair';
+import { GreyedCard } from '../components/sales/GreyedCard';
 import { useDateRange } from '../hooks/useDateRange';
 import {
   loadPurposeStages,
@@ -103,40 +104,25 @@ export default function SalesPage() {
           loading={loading}
         />
 
-        <PlaceholderCard
-          title="Quarter pair (Q1 vs Q2)"
-          description="Paired horizontal bars per location — Commit 3."
-        >
-          <div className="grid h-32 place-items-center rounded-lg bg-brand-100 text-xs text-brand-500">
-            Coming next
-          </div>
-        </PlaceholderCard>
+        <QuarterPair
+          rows={byLocation}
+          loading={loading}
+          year={Number(range.to.slice(0, 4))}
+        />
 
         <div className="grid gap-4 md:grid-cols-3 md:gap-5">
-          <PlaceholderCard
+          <GreyedCard
             title="OneApp Customer Interaction"
-            description="Awaiting AWS API access (Phase 2)."
-          >
-            <div className="grid h-24 place-items-center rounded-lg bg-brand-100 text-xs text-brand-500">
-              Data source pending
-            </div>
-          </PlaceholderCard>
-          <PlaceholderCard
+            blocker="Awaiting AWS API access (Phase 2)."
+          />
+          <GreyedCard
             title="Year-on-year (2024 vs 2025)"
-            description="2025 source data not yet ingested."
-          >
-            <div className="grid h-24 place-items-center rounded-lg bg-brand-100 text-xs text-brand-500">
-              Data source pending
-            </div>
-          </PlaceholderCard>
-          <PlaceholderCard
+            blocker="2025 source data not yet ingested."
+          />
+          <GreyedCard
             title="Realtor sale tiers"
-            description="Per-customer realtor attribution pending."
-          >
-            <div className="grid h-24 place-items-center rounded-lg bg-brand-100 text-xs text-brand-500">
-              Data source pending
-            </div>
-          </PlaceholderCard>
+            blocker="Per-customer realtor attribution pending — sub-1M / 1–5M / 5–10M tiers from H1 PDF."
+          />
         </div>
       </div>
     </>

@@ -4,7 +4,7 @@ A session-by-session narrative of what's been built, what's in flight, and what'
 
 ## Status
 
-**Sales panel Commits 1 + 2 shipped, plus inline drill-down across all four cards.** Tap any KPI tile, MoM bar / chip, pivot row, or revenue-by-location row → an accordion opens with the per-purpose or per-plot-type breakdown that produced the number. All four cards read real data for the active date range. Null-location Bank Deposit rows (fees & general deposits with no project) now surface as a footnote line under Revenue by Location rather than as a misleading "PAID IN FULL" row. Migration 017 applied + Weekly Sales ingest re-run, so the Pivot's "Unknown / unmapped" row is gone. Auth provider hardened earlier (8s getSession timeout + in-memory lock). Sign-in has a show/hide password toggle. Next: Sales panel Commit 3 — Q1/Q2 pair + greyed blocker cards.
+**Sales (Land) panel complete — step 5 of 9 done.** All six cards now live: KPI strip, MoM stacked-bar chart, plots × size pivot, revenue-by-location bars, Q1 vs Q2 paired bars, and the three greyed-out blocker cards (OneApp / YoY / realtor tiers — each names its specific blocker rather than a generic "coming soon"). Drill-down available on KPI tiles, MoM bars/chips, pivot rows, and revenue-by-location rows. Auth scope tightened: now uses `sessionStorage` so closing the tab forces re-login while refresh in the same tab stays signed in (was `localStorage` = persistent across tab closes). Next: **Marketing panel — step 6 of 9**, design lock pending (run ui-ux-pro-max against the H1 Marketing PDF section first).
 
 ## Build order overview
 
@@ -14,8 +14,8 @@ Step 1 of 9 in the roadmap from [PROJECT_BRIEF.md](PROJECT_BRIEF.md):
 2. ~~Google Sheets API service account setup, share each sheet~~ ✓
 3. Ingestion Edge Functions — Bank Deposit ✓, Marketing Expense ✓, Customer Support ✓, Weekly Sales ✓, Customer File ✓; Realtor Managers Weekly remains (blocked on per-manager attribution question)
 4. ~~React scaffold — auth, routing, layout shell, global date filter~~ ✓
-5. Sales (Land) section — pattern-setting ← here
-6. Marketing → Customer Support → Realtor Management sections
+5. ~~Sales (Land) section — pattern-setting~~ ✓
+6. Marketing → Customer Support → Realtor Management sections ← here
 7. Media & Content (manual-entry forms for the 4 brands)
 8. Rule-based narrative engine, per-section, cached per period
 9. Manual refresh button, polish, Netlify deploy
@@ -219,15 +219,27 @@ Step 1 of 9 in the roadmap from [PROJECT_BRIEF.md](PROJECT_BRIEF.md):
   - **Revenue-by-location rows**: clicking opens a DrillPanel with month-by-month payable/received bars + per-month "Owed ₦x" or "Paid in full" status. Same bar component as the top-level rows, scaled smaller via a `compact` prop.
   - **Build**: 819 kB JS / 237 kB gzipped (+3 kB gzip over Commit 2 — small price for 4 cards' worth of interaction).
 
+- **2026-05-20 (cont.)** — Sales panel Commit 3 shipped — Sales panel now feature-complete:
+  - **Q1 vs Q2 paired bars per location.** New [src/components/sales/QuarterPair.tsx](src/components/sales/QuarterPair.tsx) — per-location pair of horizontal bars (Q1 slate-400, Q2 sky-700), sorted by max(Q1, Q2) desc, top-8 with "Show all" expander and hidden-tail aggregate footnote ("+N more — ₦x Q1 / ₦y Q2 combined"). Per-row delta chip `+/-N% vs Q1` (emerald when up, slate when flat/down; suppressed when Q1=0 to avoid divide-by-zero noise). Card-header `StatusChip` flips between amber `"Q2 in progress"` and slate `"Q1 & Q2 final"` based on `today vs year-06-30`. Source line appends `(partial)` to Q2 total when in-progress. Empty state for ranges with no Q1/Q2 months. **Year drives off `range.to.slice(0,4)`** so the card auto-tracks the date picker (e.g. picking H1 2025 once that's ingested would re-key the comparison). **Source-of-truth posture:** uses `received` from Bank Deposit only (supervisor #1 — financial source of truth); same-metric across two periods is a comparison, not a reconciliation, so supervisor #3 stays honored. Zero new queries — derived in-component from existing `byLocation[].monthly[]`.
+  - **Greyed blocker cards.** New [src/components/sales/GreyedCard.tsx](src/components/sales/GreyedCard.tsx) — slate-200 frame matching PanelCard with `opacity-50 cursor-not-allowed` + `aria-disabled="true"`, internal "Data source pending" tile. Each card names its *specific* blocker (per design-lock + ui-ux-pro-max DB rule): OneApp → "Awaiting AWS API access (Phase 2)"; YoY → "2025 source data not yet ingested"; Realtor sale tiers → "Per-customer realtor attribution pending — sub-1M / 1–5M / 5–10M tiers from H1 PDF". Lined up in a 3-col grid on desktop, single column on mobile.
+  - [src/pages/SalesPage.tsx](src/pages/SalesPage.tsx) — last four `PlaceholderCard`s replaced with `QuarterPair` + three `GreyedCard`s; `PlaceholderCard` import dropped.
+  - **Build**: 823 kB JS / 238 kB gzipped (+4 kB JS / +1 kB gzip over the Commit 2 + drill-down state — small price for one new card and the three blockers).
+
+- **2026-05-20 (cont.)** — Auth scope tightened to tab-only:
+  - **Problem reported by user**: closing the tab and re-opening localhost loaded straight into the dashboard with no sign-in prompt. Desired semantics: closing the tab requires a fresh sign-in; refreshing the same tab stays signed-in.
+  - **Fix**: [src/lib/supabase.ts](src/lib/supabase.ts) now passes `storage: window.sessionStorage` to `createClient`, alongside the existing in-memory lock. Supabase auth defaults to `localStorage` which persists across tab closes; `sessionStorage` is scoped per tab — wiped on close, preserved through reload — exactly the semantic the user wanted. `persistSession: true` and `autoRefreshToken: true` explicitly set (both already SDK defaults; pinning so the intent is loud).
+  - **Trade-off documented in code**: a second simultaneously-open tab will require its own sign-in (sessionStorage is per-tab). Acceptable for a single-tab supervisor dashboard.
+  - **One-time effect on next load**: any user who had a session in `localStorage` from before this change will be signed out on next visit (SDK now looks in `sessionStorage` and finds nothing). The orphaned `localStorage` token entry is harmless dead data; user can clear it via DevTools if they want a clean slate, but it never gets read again.
+
 ## Current focus
 
-**Sales (Land) panel — Commit 3 next, Commit 1 + 2 + drill-downs live.** Four of six cards on `/sales` render real data and every chart/row drills down to its underlying breakdown. Two cards remain: Q1 vs Q2 paired bars per location, plus the three greyed-out blocker cards (OneApp / YoY / realtor tiers). After that, panel is complete and ready for supervisor eyeball before moving to Marketing.
+**Sales (Land) panel complete; Marketing panel is the next build.** All six Sales cards on `/sales` render real data (KPIs / MoM / pivot / revenue-by-location / Q1-vs-Q2) with inline drill-down on the four with breakdowns; the three blocker cards are honestly greyed. Auth scope is now tab-only. Ready for supervisor eyeball on Sales, then step 6 of 9.
 
 ## Next-session entry points
 
-1. **Sales panel Commit 3 — quarter pair + greyed cards.** Q1 vs Q2 as paired horizontal bars (reuse `<Bar />` from RevenueByLocation; DB recommendation for phone scan). Q2 bar gets a `StatusChip amber "in progress"` until today's date passes Q2 end (`2026-06-30`). Three greyed cards: OneApp → "Awaiting AWS API access (Phase 2)"; YoY → "2025 source data not yet ingested"; Realtor sale tiers → "Per-customer realtor attribution pending — sub-1M / 1–5M / 5–10M tiers from H1 PDF". Use `opacity-50` + `cursor-not-allowed` per DB rule. Query addition: extend `loadSalesPanelData` with per-quarter sums (simpler than a separate loader; can derive from `monthly[]` in-page if preferred).
-2. **Marketing panel (step 6 of 9).** Same data-source-of-truth pattern: monthly expenses by category (`marketing_monthly.by_category` jsonb), trend over time, top categories. Apply the same drill-down pattern locked this session (tap a category → see its monthly trend or top descriptions). Design lock pending — run ui-ux-pro-max against the H1 Marketing section of the PDF before coding.
-3. **Bundle-size pass (low priority).** 237 kB gzipped is fine on desktop but the supervisor reviews on phone. Once all three panels are wired, code-split Recharts into a lazy chunk and benchmark.
+1. **Marketing panel (step 6 of 9).** Same data-source-of-truth pattern: monthly expenses by category (`marketing_monthly.by_category` jsonb), trend over time, top categories. Apply the same drill-down pattern locked this session (tap a category → see its monthly trend or top descriptions). **Design lock pending** — run ui-ux-pro-max against the H1 Marketing section of the PDF before coding. Existing aggregate already has the data: `marketing_monthly` (period × total_income / total_expenditure / by_category jsonb) populated from 94 rows across Jan–May 2026.
+2. **Bundle-size pass (low priority).** 238 kB gzipped is fine on desktop but the supervisor reviews on phone. Once all three panels are wired, code-split Recharts into a lazy chunk and benchmark.
+3. **Sales panel polish candidates** (only if supervisor flags them in eyeball review): add drill-down to Q1 vs Q2 (currently no drill — deliberately scoped out for v1); split Q1 vs Q2 into a "Received view" / "Payable view" toggle if the supervisor wants both lenses.
 
 **Standing items not on the critical path:**
 
