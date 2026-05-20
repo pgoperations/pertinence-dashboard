@@ -232,8 +232,8 @@ function buildSource(
     q2InProgress ? ' (partial)' : ''
   }`;
   if (deltaPct === null) {
-    return `Bank Deposit (financial source of truth). ${totals}.`;
+    return `Bank Deposit. ${totals}.`;
   }
   const sign = deltaPct >= 0 ? '+' : '';
-  return `Bank Deposit (financial source of truth). ${totals} — ${sign}${deltaPct.toFixed(1)}% overall.`;
+  return `Bank Deposit. ${totals} — ${sign}${deltaPct.toFixed(1)}% overall.`;
 }
