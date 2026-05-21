@@ -108,10 +108,54 @@ export function PlotSizePivot({
                     );
                   })}
             </tbody>
+            {!loading && pivot.length > 0 && (
+              <tfoot>
+                <tr>
+                  <TotalTd sticky>Total</TotalTd>
+                  <TotalTd align="right">{cellNum(sumKey(pivot, 'starter'))}</TotalTd>
+                  <TotalTd align="right">{cellNum(sumKey(pivot, 'classic'))}</TotalTd>
+                  <TotalTd align="right">{cellNum(sumKey(pivot, 'executive'))}</TotalTd>
+                  <TotalTd align="right">{cellNum(sumKey(pivot, 'special'))}</TotalTd>
+                  <TotalTd align="right" grand>{formatNumber(sumKey(pivot, 'total'))}</TotalTd>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       )}
     </PanelCard>
+  );
+}
+
+function sumKey(rows: PlotPivotRow[], key: 'starter' | 'classic' | 'executive' | 'special' | 'total'): number {
+  let n = 0;
+  for (const r of rows) n += r[key];
+  return n;
+}
+
+function TotalTd({
+  children,
+  align = 'left',
+  sticky,
+  grand,
+}: {
+  children: ReactNode;
+  align?: 'left' | 'right';
+  sticky?: boolean;
+  grand?: boolean;
+}) {
+  return (
+    <td
+      className={[
+        'border-t-2 border-slate-300 bg-slate-50 px-3 py-2.5 tabular-nums font-semibold',
+        grand ? 'text-slate-900' : 'text-slate-700',
+        align === 'right' ? 'text-right' : 'text-left',
+        sticky ? 'sticky left-0 z-10' : '',
+      ].join(' ')}
+      style={sticky ? { boxShadow: '1px 0 0 0 rgb(226 232 240)' } : undefined}
+    >
+      {children}
+    </td>
   );
 }
 

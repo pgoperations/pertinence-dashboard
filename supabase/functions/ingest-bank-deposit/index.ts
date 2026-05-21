@@ -11,22 +11,25 @@
 //   * Named column constants here, never positional indexes. The HR dashboard
 //     burned us on positional reads — never again.
 //   * `CLIENT  NAME` (column I) has an intentional double space. Match exactly.
-//   * Columns L (second DATE) and M (status) are out of scope per supervisor.
 //   * source_row_id: TRANS CODE if non-empty, else `row-{N}` (1-indexed sheet row).
 //   * Idempotent upsert keyed on (source_sheet, source_tab, source_row_id).
 //   * After ingest, refresh sales_by_location_monthly via the RPC in migration 010.
 //
-// Date handling:
-//   * UNFORMATTED_VALUE serial numbers go through sheetsSerialToIsoDate.
-//   * Text dates ("13/01/2026", D/M/YYYY Nigerian convention) go through
-//     parseDmyTextDate. ~60 such rows exist on 2026 LAND because some entries
-//     were typed instead of date-formatted.
-//   * Empty column A → forward-fill from the most recently parsed date on
-//     this sheet. The supervisor's ledger convention is to enter the date
-//     once per day and leave subsequent same-day deposits blank in column A.
-//   * Non-empty but unparseable cell → real anomaly. Flagged with
-//     unparseable_date and NOT forward-filled, so a typo can't silently
-//     inherit a neighbouring date.
+// Date handling (revised 2026-05-21):
+//   * Source of truth for txn_date is column L, NOT column A. Column A is the
+//     bank mirror's raw paste — it writes M/D/YYYY strings into a D/M/Y-locale
+//     sheet, so day/month get swapped on some entries (e.g. "01/06/2026" Jan 6
+//     → serial June 1). Column L is the supervisor's working ledger date,
+//     sequential and clean. The brief's earlier "column A is the real txn
+//     date" decision (2026-05-11) is superseded by today's session.
+//   * UNFORMATTED_VALUE serial numbers go through sheetsSerialToIsoDate; text
+//     dates go through parseDmyTextDate. Both are needed because some L cells
+//     are typed text and others are date-formatted.
+//   * Empty column L → forward-fill from the most recently parsed date.
+//   * Non-empty but unparseable cell → flagged with unparseable_date and NOT
+//     forward-filled, so a typo can't silently inherit a neighbouring date.
+//   * Column M (status) remains out of scope. Column A's value is preserved
+//     in raw_row as `DATE A` for traceability against the bank source.
 //
 // Quality flags emitted (from _shared/quality_flags.ts):
 //   * unknown_purpose, unknown_location  — alias didn't match a canonical
@@ -56,7 +59,7 @@ const READ_RANGE = `${SOURCE_TAB}!A2:M`;
 // ['DATE','BANK STATEMENT DETAILS','AMOUNT','BANK ACCOUNT','PURPOSE','LOCATION',
 //  'ACCOUNT PAYMENT NAME','TRANS CODE','CLIENT  NAME','SALES PERSON','','DATE', '']
 const COL = {
-  DATE: 0,
+  DATE_A: 0,                  // bank-mirror raw date; preserved in raw_row only
   BANK_STATEMENT_DETAILS: 1,
   AMOUNT: 2,
   BANK_ACCOUNT: 3,
@@ -64,16 +67,18 @@ const COL = {
   LOCATION: 5,
   ACCOUNT_PAYMENT_NAME: 6,
   TRANS_CODE: 7,
-  CLIENT_NAME: 8, // header literally `CLIENT  NAME` (double space — supervisor confirmed)
+  CLIENT_NAME: 8,             // header literally `CLIENT  NAME` (double space — supervisor confirmed)
   SALES_PERSON: 9,
-  // 10: blank header
-  // 11: second DATE — out of scope
+  // 10: blank header column
+  DATE: 11,                   // column L — supervisor's clean working date (source of truth, locked 2026-05-21)
   // 12: status (e.g. "ALERT SENT") — out of scope
 } as const;
 
 // Header keys for raw_row jsonb. Stable contract for downstream querying.
+// `DATE A` keeps the bank-mirror's raw date for traceback; `DATE` is the
+// column-L value the ingest uses for txn_date.
 const RAW_ROW_KEYS = [
-  'DATE',
+  'DATE A',
   'BANK STATEMENT DETAILS',
   'AMOUNT',
   'BANK ACCOUNT',
@@ -83,6 +88,8 @@ const RAW_ROW_KEYS = [
   'TRANS CODE',
   'CLIENT  NAME',
   'SALES PERSON',
+  null,    // col K — blank header
+  'DATE',
 ] as const;
 
 type ParsedRow = {
@@ -124,6 +131,7 @@ function parseRow(
   sheetRowNumber: number,
   txn_date: string | null,
   dateUnparseable: boolean,
+  dateFallbackToA: unknown,
   lookups: { locationByAlias: Map<string, string>; purposeByAlias: Map<string, string> },
 ): ParsedRow | null {
   // Skip totally blank rows (rare but happen in spreadsheets).
@@ -133,6 +141,9 @@ function parseRow(
 
   const flags: QualityFlags = {};
   if (dateUnparseable) flags[QUALITY_FLAGS.UNPARSEABLE_DATE] = true;
+  if (dateFallbackToA !== null) {
+    flags[QUALITY_FLAGS.DATE_FALLBACK_TO_A] = `column-A: ${String(dateFallbackToA)}`;
+  }
 
   const amount_received = toNumberOrZero(row[COL.AMOUNT]);
 
@@ -153,7 +164,7 @@ function parseRow(
 
   const raw_row: Record<string, unknown> = {};
   RAW_ROW_KEYS.forEach((key, idx) => {
-    raw_row[key] = row[idx] ?? null;
+    if (key !== null) raw_row[key] = row[idx] ?? null;
   });
 
   return {
@@ -192,39 +203,62 @@ Deno.serve(async (req) => {
     const sheetData = await readSheetValues(accessToken, spreadsheetId, READ_RANGE);
     const rawRows = sheetData.values ?? [];
 
-    // Forward-fill convention on 2026 LAND: the supervisor enters the date
-    // once for a day's first deposit and leaves column A blank for subsequent
-    // deposits on the same date. Empty cell => same as the row above. We carry
-    // the last successfully parsed date across rows so `txn_date` reflects what
-    // the supervisor sees visually. A non-empty but unparseable date cell is
-    // treated as a real anomaly (flagged with unparseable_date, NOT forward-
-    // filled) so genuine typos don't silently inherit a wrong date.
+    // Date strategy on 2026 LAND:
+    //   * Primary: column L (supervisor's clean working ledger).
+    //   * Tail fallback: column A is consulted ONLY for rows AFTER the last
+    //     non-blank L row. That section is the supervisor's L lag (he hasn't
+    //     filled L for the latest bank entries yet). Within L's covered range
+    //     we keep the forward-fill convention — using A there would expose us
+    //     to M/D/Y typos like serial 46238 (Aug 4) that should really be Apr 4.
+    //   * Empty both (and inside L's coverage) → forward-fill from L.
+    //   * Non-empty but unparseable → flagged + NOT forward-filled.
+    let lastLNonBlankRow = -1;
+    for (let i = 0; i < rawRows.length; i++) {
+      const v = (rawRows[i] ?? [])[COL.DATE];
+      if (v !== '' && v !== null && v !== undefined) lastLNonBlankRow = i;
+    }
+
     const parsed: ParsedRow[] = [];
     let blankSkipped = 0;
     let fallbackRowIdCount = 0;
     let forwardFilledDateCount = 0;
+    let dateFallbackCount = 0;
     let lastValidDate: string | null = null;
     for (let i = 0; i < rawRows.length; i++) {
       const sheetRowNumber = i + 2; // range starts at A2
       const row = rawRows[i] ?? [];
-      const rawDate = row[COL.DATE];
-      const dateIsEmpty = rawDate === '' || rawDate === undefined || rawDate === null;
+      const rawL = row[COL.DATE];
+      const rawA = row[COL.DATE_A];
+      const lEmpty = rawL === '' || rawL === undefined || rawL === null;
+      const aEmpty = rawA === '' || rawA === undefined || rawA === null;
+      const inLTail = i > lastLNonBlankRow;
 
       let txn_date: string | null;
       let dateUnparseable = false;
-      if (dateIsEmpty) {
-        txn_date = lastValidDate;
-        if (txn_date !== null) forwardFilledDateCount++;
-      } else {
-        txn_date = parseSheetDate(rawDate);
+      let dateFallbackToA: unknown = null;
+
+      if (!lEmpty) {
+        txn_date = parseSheetDate(rawL);
+        if (txn_date === null) dateUnparseable = true;
+        else lastValidDate = txn_date;
+      } else if (inLTail && !aEmpty) {
+        // We're past the last L-filled row AND this row has a column-A date.
+        // Supervisor hasn't backfilled L yet for this entry.
+        txn_date = parseSheetDate(rawA);
         if (txn_date === null) {
           dateUnparseable = true;
         } else {
           lastValidDate = txn_date;
+          dateFallbackToA = rawA;
+          dateFallbackCount++;
         }
+      } else {
+        // L blank inside L's coverage (or both blank in the tail) → forward-fill.
+        txn_date = lastValidDate;
+        if (txn_date !== null) forwardFilledDateCount++;
       }
 
-      const parsedRow = parseRow(row, sheetRowNumber, txn_date, dateUnparseable, lookups);
+      const parsedRow = parseRow(row, sheetRowNumber, txn_date, dateUnparseable, dateFallbackToA, lookups);
       if (!parsedRow) {
         blankSkipped++;
         continue;
@@ -290,6 +324,7 @@ Deno.serve(async (req) => {
         blankSkipped,
         fallbackRowIdCount,
         forwardFilledDateCount,
+        dateFallbackCount,
         duplicateTransCodes,
         flagCounts,
         aggregateRowsInserted: refreshResult,

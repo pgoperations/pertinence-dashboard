@@ -7,8 +7,12 @@
 // Two source formats, two parsers (the brief calls these out explicitly):
 //
 //   Weekly Sales ("2026 Weekly Sales Report"):
-//     "1 EXECUTIVE", "2 CLASSIC", "1 QUARTER", "1 SPECIAL [220SQM]"
-//     Format: {count} {WORD}[ [{N}SQM]]
+//     "1 EXECUTIVE", "2 CLASSIC", "1 QUARTER", "1 SPECIAL [220SQM]",
+//     "1 ACRE", "1 SPECIAL[cornerpiece]"
+//     Format: {count} {WORD}[ [{annotation}]]
+//     WORD ∈ {STARTER, CLASSIC, EXECUTIVE, SPECIAL, QUARTER, ACRE(S), HECTAR(E)(S)}
+//     Annotation is optional, free-text. Only "{N}SQM" extracts a size — other
+//     content (e.g. "cornerpiece") is treated as a cosmetic note.
 //     Count lives INSIDE the cell value.
 //
 //   Customer File ("2026 Customer File"):
@@ -71,11 +75,15 @@ export function sqmToCanonical(sqm: number): PlotTypeName {
   return 'Special';
 }
 
-// Weekly Sales: "{count} {WORD}" with optional " [{N}SQM]" annotation.
-// QUARTER is bucketed as Special per the brief (sub-300 land).
-// Returns null if the cell doesn't match — caller flags unparseable_plot_type.
+// Weekly Sales: "{count} {WORD}" with optional " [{NSQM or anything}]" annotation.
+// QUARTER / ACRE / HECTAR(E)(S) all bucket as Special per the brief.
+// Bracket annotation is permissive: "[NSQM]" extracts the size; anything else
+// (e.g. "[cornerpiece]") is preserved as cosmetic note and the row still parses.
+// Returns null only if the cell shape itself doesn't match — caller flags
+// unparseable_plot_type.
 const WEEKLY_RE =
-  /^\s*(\d+)\s+(STARTER|CLASSIC|EXECUTIVE|SPECIAL|QUARTER)(?:\s*\[\s*(\d+)\s*SQM\s*\])?\s*$/i;
+  /^\s*(\d+)\s+(STARTER|CLASSIC|EXECUTIVE|SPECIAL|QUARTER|ACRE|ACRES|HECTAR|HECTARE|HECTARES)(?:\s*\[([^\]]*)\])?\s*$/i;
+const BRACKET_SQM_RE = /^\s*(\d+)\s*SQM\s*$/i;
 
 export function parseWeeklySalesPlotType(raw: unknown): ParsedWeeklyPlot | null {
   if (typeof raw !== 'string') return null;
@@ -84,13 +92,19 @@ export function parseWeeklySalesPlotType(raw: unknown): ParsedWeeklyPlot | null 
   const count = Number.parseInt(m[1], 10);
   if (!Number.isFinite(count) || count < 1) return null;
   const word = m[2].toUpperCase();
-  const sizeSqm = m[3] ? Number.parseInt(m[3], 10) : null;
+  // Only extract size if the bracket content is the {N}SQM form;
+  // free-text annotations (e.g. "cornerpiece") leave sizeSqm null.
+  let sizeSqm: number | null = null;
+  if (m[3]) {
+    const sm = BRACKET_SQM_RE.exec(m[3]);
+    if (sm) sizeSqm = Number.parseInt(sm[1], 10);
+  }
 
   let canonicalName: PlotTypeName;
   if (word === 'STARTER') canonicalName = 'Starter';
   else if (word === 'CLASSIC') canonicalName = 'Classic';
   else if (word === 'EXECUTIVE') canonicalName = 'Executive';
-  else canonicalName = 'Special'; // SPECIAL and QUARTER both bucket here
+  else canonicalName = 'Special'; // SPECIAL, QUARTER, ACRE(S), HECTAR(E)(S) all bucket here
 
   return { canonicalName, count, sizeSqm };
 }

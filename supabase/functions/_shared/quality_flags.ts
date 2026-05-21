@@ -47,6 +47,13 @@ export const QUALITY_FLAGS = {
   // admin panel and the next ingest run picks it up. Empty Nature cells are
   // NOT flagged with this — absence is its own state.
   UNKNOWN_COMPLAINT_CATEGORY: 'unknown_complaint_category',
+
+  // Bank Deposit `2026 LAND`: row's column L (supervisor's clean working date)
+  // was blank, so the ingest fell back to column A (bank-mirror auto-paste).
+  // For recent transactions only — the supervisor's L column lags the bank's
+  // by a few days. Tracks how many rows are "supervisor-pending" so the gap
+  // is visible. Value is the column A raw date used.
+  DATE_FALLBACK_TO_A: 'date_fallback_to_a',
 } as const;
 
 export type QualityFlagKey = (typeof QUALITY_FLAGS)[keyof typeof QUALITY_FLAGS];

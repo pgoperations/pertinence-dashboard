@@ -49,6 +49,14 @@ export type SalesKpis = {
   initialReceived: number;
   furtherReceived: number;
   feesReceived: number;
+  /** Initial + Further + Fees — every naira that hit the bank in the range. */
+  totalRevenueInflow: number;
+};
+
+export type StageBreakdownEntry = {
+  stage: 'initial' | 'further' | 'fee';
+  label: string;
+  amount: number;
 };
 
 export type PurposeBreakdownEntry = {
@@ -73,6 +81,8 @@ export type KpiBreakdowns = {
   furtherReceived: PurposeBreakdownEntry[];
   /** by purpose canonical: Allocation Fee, Security Fee, Change of Ownership, etc. */
   feesReceived: PurposeBreakdownEntry[];
+  /** Hero KPI split: Initial / Further / Fees as the three stages that sum to it. */
+  totalRevenueInflow: StageBreakdownEntry[];
 };
 
 export type SalesMonthBucket = {
@@ -80,10 +90,14 @@ export type SalesMonthBucket = {
   month: string;
   initial: number;
   further: number;
+  fees: number;
+  /** initial + further + fees — every naira received this month. */
+  totalRevenue: number;
   payable: number;
   // Drill-down: per-canonical breakdowns that sum to the totals above.
   initialBreakdown: PurposeBreakdownEntry[];
   furtherBreakdown: PurposeBreakdownEntry[];
+  feesBreakdown: PurposeBreakdownEntry[];
   payableBreakdown: PlotTypeBreakdownEntry[];
 };
 
@@ -125,8 +139,37 @@ export type RevenueByLocationRow = {
   payable: number;
   received: number;
   delta: number;
+  /** Bank-deposit transaction count at this location (matches supervisor's "· N" suffix). */
+  dealCount: number;
   /** Per-month payable + received for this location (drill-down). Months asc. */
   monthly: LocationMonthlyEntry[];
+};
+
+export type TopRealtorEntry = {
+  salesPerson: string;
+  revenue: number;
+  dealCount: number;
+};
+
+export type TopDealEntry = {
+  txnDate: string;
+  clientName: string | null;
+  salesPerson: string | null;
+  locationName: string | null;
+  purposeName: string | null;
+  amount: number;
+};
+
+export type WeeklyTxnEntry = TopDealEntry;
+
+export type WeekBucket = {
+  /** Monday of the week, YYYY-MM-DD. */
+  weekStart: string;
+  /** Sunday of the week, YYYY-MM-DD. */
+  weekEnd: string;
+  revenue: number;
+  dealCount: number;
+  entries: WeeklyTxnEntry[];
 };
 
 export type SalesPanelData = {
@@ -140,6 +183,12 @@ export type SalesPanelData = {
    *  Surfaced as a footnote on the by-location card rather than as a "PAID IN FULL"
    *  row, which would be misleading — it's not paid in full, it just has no location. */
   byLocationOtherReceived: number;
+  /** Bank-deposit transaction count with no associated location (matches the "Other" cohort above). */
+  byLocationOtherDealCount: number;
+  topRealtors: TopRealtorEntry[];
+  topDeals: TopDealEntry[];
+  /** Week buckets (Mon–Sun) covering the date range, most recent first. */
+  weeks: WeekBucket[];
   sources: SalesPanelSources;
 };
 
@@ -167,10 +216,11 @@ export async function loadSalesPanelData(
   range: DateRange,
   stages: PurposeStages,
 ): Promise<SalesPanelData> {
-  const [bd, ps, sbl] = await Promise.all([
+  const [bd, ps, sbl, locationNameById] = await Promise.all([
     fetchBankDeposits(range),
     fetchPlotSalesMonthly(range),
     fetchSalesByLocationMonthly(range),
+    fetchLocationNames(),
   ]);
 
   // --- Per-month totals (header chart) -------------------------------------
@@ -182,9 +232,12 @@ export async function loadSalesPanelData(
         month: key,
         initial: 0,
         further: 0,
+        fees: 0,
+        totalRevenue: 0,
         payable: 0,
         initialBreakdown: [],
         furtherBreakdown: [],
+        feesBreakdown: [],
         payableBreakdown: [],
       };
       monthMap.set(key, b);
@@ -204,6 +257,14 @@ export async function loadSalesPanelData(
   // Per-month per-purpose: month → { purpose → amount } (separate maps per stage)
   const initialByMonthPurpose = new Map<string, Map<string, number>>();
   const furtherByMonthPurpose = new Map<string, Map<string, number>>();
+  const feesByMonthPurpose = new Map<string, Map<string, number>>();
+
+  // Bank-deposit derived: deal counts per location + realtor leaderboard + every-txn list.
+  const dealCountByLoc = new Map<string, number>();
+  let dealCountNullLoc = 0;
+  const revenueBySalesPerson = new Map<string, number>();
+  const dealCountBySalesPerson = new Map<string, number>();
+  const allTxns: TopDealEntry[] = [];
   const addMonthPurpose = (
     map: Map<string, Map<string, number>>,
     month: string,
@@ -242,10 +303,38 @@ export async function loadSalesPanelData(
     } else {
       feesReceived += amount;
       feesByPurpose.set(purposeName, (feesByPurpose.get(purposeName) ?? 0) + amount);
+      const bucket = ensureMonth(monthKey);
+      bucket.fees += amount;
+      addMonthPurpose(feesByMonthPurpose, monthKey, purposeName, amount);
     }
 
     if (row.updated_at && (!bankDepositRefreshedAt || row.updated_at > bankDepositRefreshedAt)) {
       bankDepositRefreshedAt = row.updated_at;
+    }
+
+    // Per-location deal count (matches supervisor's "· N" suffix on the by-location card).
+    if (row.location_id) {
+      const locName = locationNameById.get(row.location_id) ?? UNKNOWN_LOCATION;
+      dealCountByLoc.set(locName, (dealCountByLoc.get(locName) ?? 0) + 1);
+    } else {
+      dealCountNullLoc++;
+    }
+
+    // Realtor leaderboard. Null sales_person → "Unattributed" bucket (per project brief).
+    const sp = row.sales_person?.trim() || 'Unattributed';
+    revenueBySalesPerson.set(sp, (revenueBySalesPerson.get(sp) ?? 0) + amount);
+    dealCountBySalesPerson.set(sp, (dealCountBySalesPerson.get(sp) ?? 0) + 1);
+
+    // Every transaction → seeds top-deals + weekly browser. Skip zero-amount fees row noise.
+    if (amount > 0) {
+      allTxns.push({
+        txnDate: row.txn_date,
+        clientName: row.customer_name,
+        salesPerson: row.sales_person,
+        locationName: row.location_id ? (locationNameById.get(row.location_id) ?? null) : null,
+        purposeName: row.purpose_id ? (stages.nameById.get(row.purpose_id) ?? null) : null,
+        amount,
+      });
     }
   }
 
@@ -376,12 +465,15 @@ export async function loadSalesPanelData(
     if (initInner) bucket.initialBreakdown = sortedBreakdown(initInner);
     const furInner = furtherByMonthPurpose.get(month);
     if (furInner) bucket.furtherBreakdown = sortedBreakdown(furInner);
+    const feeInner = feesByMonthPurpose.get(month);
+    if (feeInner) bucket.feesBreakdown = sortedBreakdown(feeInner);
     const ptInner = payableByMonthType.get(month);
     if (ptInner) {
       bucket.payableBreakdown = [...ptInner.entries()]
         .map(([plotTypeName, v]) => ({ plotTypeName, count: v.count, payable: v.payable }))
         .sort(plotTypeSort);
     }
+    bucket.totalRevenue = bucket.initial + bucket.further + bucket.fees;
   }
 
   const monthly = [...monthMap.values()].sort((a, b) => a.month.localeCompare(b.month));
@@ -429,12 +521,14 @@ export async function loadSalesPanelData(
         payable,
         received,
         delta: received - payable,
+        dealCount: dealCountByLoc.get(name) ?? 0,
         monthly,
       };
     })
     .sort((a, b) => Math.max(b.payable, b.received) - Math.max(a.payable, a.received));
 
   // --- KPI breakdowns -----------------------------------------------------
+  const totalRevenueInflow = initialReceived + furtherReceived + feesReceived;
   const kpiBreakdowns: KpiBreakdowns = {
     plotsSold: [...payableByType.entries()]
       .map(([plotTypeName, v]) => ({ plotTypeName, count: v.count, payable: v.payable }))
@@ -447,7 +541,46 @@ export async function loadSalesPanelData(
     initialReceived: sortedBreakdown(initialByPurpose),
     furtherReceived: sortedBreakdown(furtherByPurpose),
     feesReceived: sortedBreakdown(feesByPurpose),
+    totalRevenueInflow: [
+      { stage: 'initial', label: 'Initial received', amount: initialReceived },
+      { stage: 'further', label: 'Further received', amount: furtherReceived },
+      { stage: 'fee',     label: 'Fees & charges',   amount: feesReceived     },
+    ].filter((e) => e.amount > 0) as StageBreakdownEntry[],
   };
+
+  // --- Top realtors -------------------------------------------------------
+  const topRealtors: TopRealtorEntry[] = [...revenueBySalesPerson.entries()]
+    .map(([salesPerson, revenue]) => ({
+      salesPerson,
+      revenue,
+      dealCount: dealCountBySalesPerson.get(salesPerson) ?? 0,
+    }))
+    .filter((e) => e.revenue > 0)
+    .sort((a, b) => b.revenue - a.revenue);
+
+  // --- Top deals (single biggest transactions) ----------------------------
+  const topDeals: TopDealEntry[] = [...allTxns]
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 5);
+
+  // --- Weekly buckets (Mon–Sun) -------------------------------------------
+  const weekMap = new Map<string, WeekBucket>();
+  for (const t of allTxns) {
+    const [ws, we] = mondayWeekRange(t.txnDate);
+    let bucket = weekMap.get(ws);
+    if (!bucket) {
+      bucket = { weekStart: ws, weekEnd: we, revenue: 0, dealCount: 0, entries: [] };
+      weekMap.set(ws, bucket);
+    }
+    bucket.revenue += t.amount;
+    bucket.dealCount += 1;
+    bucket.entries.push(t);
+  }
+  const weeks = [...weekMap.values()]
+    .sort((a, b) => b.weekStart.localeCompare(a.weekStart));
+  for (const w of weeks) {
+    w.entries.sort((a, b) => a.txnDate.localeCompare(b.txnDate));
+  }
 
   return {
     kpis: {
@@ -456,14 +589,40 @@ export async function loadSalesPanelData(
       initialReceived,
       furtherReceived,
       feesReceived,
+      totalRevenueInflow,
     },
     kpiBreakdowns,
     monthly,
     pivot,
     byLocation,
     byLocationOtherReceived,
+    byLocationOtherDealCount: dealCountNullLoc,
+    topRealtors,
+    topDeals,
+    weeks,
     sources: { bankDepositRefreshedAt, plotSalesRefreshedAt },
   };
+}
+
+// Returns [Monday, Sunday] ISO date for the week containing the given date.
+// Pure UTC string math — no Date timezone gotchas.
+function mondayWeekRange(isoDate: string): [string, string] {
+  const [y, m, d] = isoDate.split('-').map((p) => Number.parseInt(p, 10));
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const dow = dt.getUTCDay(); // 0 = Sun, 1 = Mon ... 6 = Sat
+  const mondayOffset = dow === 0 ? -6 : 1 - dow;
+  const monday = new Date(dt);
+  monday.setUTCDate(dt.getUTCDate() + mondayOffset);
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+  return [iso(monday), iso(sunday)];
+}
+
+function iso(dt: Date): string {
+  const y = dt.getUTCFullYear();
+  const m = String(dt.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(dt.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function sortedBreakdown(map: Map<string, number>): PurposeBreakdownEntry[] {
@@ -482,6 +641,9 @@ function plotTypeSort(a: PlotTypeBreakdownEntry, b: PlotTypeBreakdownEntry): num
 type BankDepositRow = {
   txn_date: string | null;
   purpose_id: string | null;
+  location_id: string | null;
+  customer_name: string | null;
+  sales_person: string | null;
   amount_received: number | string;
   updated_at: string | null;
 };
@@ -493,7 +655,7 @@ async function fetchBankDeposits(range: DateRange): Promise<BankDepositRow[]> {
   for (;;) {
     const { data, error } = await supabase
       .from('bank_deposits')
-      .select('txn_date, purpose_id, amount_received, updated_at')
+      .select('txn_date, purpose_id, location_id, customer_name, sales_person, amount_received, updated_at')
       .gte('txn_date', range.from)
       .lte('txn_date', range.to)
       .order('txn_date', { ascending: true })
@@ -505,6 +667,14 @@ async function fetchBankDeposits(range: DateRange): Promise<BankDepositRow[]> {
     from += pageSize;
   }
   return rows;
+}
+
+async function fetchLocationNames(): Promise<Map<string, string>> {
+  const { data, error } = await supabase.from('locations').select('id, name');
+  if (error) throw error;
+  const map = new Map<string, string>();
+  for (const row of data ?? []) map.set(row.id, row.name);
+  return map;
 }
 
 type EmbeddedName = { name: string } | null;

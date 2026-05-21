@@ -6,6 +6,9 @@ import { MoMChart } from '../components/sales/MoMChart';
 import { PlotSizePivot } from '../components/sales/PlotSizePivot';
 import { RevenueByLocation } from '../components/sales/RevenueByLocation';
 import { QuarterPair } from '../components/sales/QuarterPair';
+import { TopRealtors } from '../components/sales/TopRealtors';
+import { TopDeals } from '../components/sales/TopDeals';
+import { WeeklyDetail } from '../components/sales/WeeklyDetail';
 import { GreyedCard } from '../components/sales/GreyedCard';
 import { useDateRange } from '../hooks/useDateRange';
 import {
@@ -62,6 +65,7 @@ export default function SalesPage() {
     initialReceived: 0,
     furtherReceived: 0,
     feesReceived: 0,
+    totalRevenueInflow: 0,
   };
   const kpiBreakdowns = data?.kpiBreakdowns ?? {
     plotsSold: [],
@@ -69,11 +73,16 @@ export default function SalesPage() {
     initialReceived: [],
     furtherReceived: [],
     feesReceived: [],
+    totalRevenueInflow: [],
   };
   const monthly = data?.monthly ?? [];
   const pivot = data?.pivot ?? [];
   const byLocation = data?.byLocation ?? [];
   const byLocationOtherReceived = data?.byLocationOtherReceived ?? 0;
+  const byLocationOtherDealCount = data?.byLocationOtherDealCount ?? 0;
+  const topRealtors = data?.topRealtors ?? [];
+  const topDeals = data?.topDeals ?? [];
+  const weeks = data?.weeks ?? [];
   const sources = data?.sources ?? {
     bankDepositRefreshedAt: null,
     plotSalesRefreshedAt: null,
@@ -101,6 +110,7 @@ export default function SalesPage() {
         <RevenueByLocation
           rows={byLocation}
           otherReceived={byLocationOtherReceived}
+          otherDealCount={byLocationOtherDealCount}
           loading={loading}
         />
 
@@ -109,6 +119,13 @@ export default function SalesPage() {
           loading={loading}
           year={Number(range.to.slice(0, 4))}
         />
+
+        <div className="grid gap-4 md:grid-cols-2 md:gap-5">
+          <TopRealtors realtors={topRealtors} loading={loading} />
+          <TopDeals deals={topDeals} loading={loading} />
+        </div>
+
+        <WeeklyDetail weeks={weeks} loading={loading} />
 
         <div className="grid gap-4 md:grid-cols-3 md:gap-5">
           <GreyedCard

@@ -10,7 +10,6 @@ import {
   YAxis,
 } from 'recharts';
 import { PanelCard } from '../PanelCard';
-import { StatusChip } from '../StatusChip';
 import { BreakdownList, type BreakdownItem } from './BreakdownList';
 import { DrillPanel } from './DrillPanel';
 import { formatNairaCompact, formatMonthShort, formatMonthYear, formatNumber } from '../../lib/format';
@@ -21,8 +20,11 @@ type ChartRow = SalesMonthBucket & {
   owed: number;
 };
 
+type ViewMode = 'received-vs-payable' | 'total-revenue';
+
 const COLOR_INITIAL = '#0369A1';
 const COLOR_FURTHER = '#475569';
+const COLOR_FEES = '#0EA5E9';
 const COLOR_PAYABLE = '#94A3B8';
 const COLOR_GRID = '#E2E8F0';
 
@@ -34,11 +36,14 @@ export function MoMChart({
   loading: boolean;
 }) {
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+  const [view, setView] = useState<ViewMode>('received-vs-payable');
 
   const data: ChartRow[] = monthly.map((m) => {
     const received = m.initial + m.further;
     return { ...m, received, owed: Math.max(0, m.payable - received) };
   });
+
+  const isTotalView = view === 'total-revenue';
 
   const empty = !loading && data.length === 0;
   const expandedRow = selectedMonth ? data.find((d) => d.month === selectedMonth) ?? null : null;
@@ -48,10 +53,26 @@ export function MoMChart({
 
   return (
     <PanelCard
-      title="Month-on-month received vs payable"
-      subtitle="Initial + Further stacked. Tick line = Payable. Tap a month chip for that month's breakdown."
-      right={<StatusChip tone="sky">Stacked</StatusChip>}
-      source="Bank Deposit 2026 LAND (received side) • Weekly Sales 2026 (payable side). Surfaced together, never reconciled."
+      title={isTotalView ? 'Month-on-month total revenue' : 'Month-on-month received vs payable'}
+      subtitle={
+        isTotalView
+          ? 'Total revenue = Initial + Further + Fees. Tap a month chip for that month’s breakdown.'
+          : 'Initial + Further stacked. Tick line = Payable. Tap a month chip for that month’s breakdown.'
+      }
+      right={
+        <ViewToggle
+          view={view}
+          onChange={(next) => {
+            setView(next);
+            setSelectedMonth(null);
+          }}
+        />
+      }
+      source={
+        isTotalView
+          ? 'Bank Deposit 2026 LAND — every naira received in the period, including fees & charges.'
+          : 'Bank Deposit 2026 LAND (received side) • Weekly Sales 2026 (payable side). Surfaced together, never reconciled.'
+      }
     >
       {empty ? (
         <div className="grid h-56 place-items-center rounded-lg bg-slate-50 text-sm text-slate-500">
@@ -73,7 +94,14 @@ export function MoMChart({
                   axisLine={{ stroke: COLOR_GRID }}
                   height={48}
                   interval={0}
-                  tick={(props) => <MonthOwedTick {...props} rows={data} selected={selectedMonth} />}
+                  tick={(props) => (
+                    <MonthOwedTick
+                      {...props}
+                      rows={data}
+                      selected={selectedMonth}
+                      showOwed={!isTotalView}
+                    />
+                  )}
                 />
                 <YAxis
                   tickLine={false}
@@ -82,47 +110,93 @@ export function MoMChart({
                   tickFormatter={formatNairaCompact}
                   width={56}
                 />
-                <Tooltip content={<MoMTooltip />} cursor={{ fill: 'rgba(2,132,199,0.05)' }} />
-                <Bar
-                  dataKey="initial"
-                  stackId="received"
-                  fill={COLOR_INITIAL}
-                  name="Initial received"
-                  radius={[0, 0, 0, 0]}
-                  onClick={(d: unknown) => {
-                    const month = (d as { payload?: { month?: string } })?.payload?.month;
-                    if (month) toggleMonth(month);
-                  }}
-                  style={{ cursor: 'pointer' }}
+                <Tooltip
+                  content={<MoMTooltip view={view} />}
+                  cursor={{ fill: 'rgba(2,132,199,0.05)' }}
                 />
-                <Bar
-                  dataKey="further"
-                  stackId="received"
-                  fill={COLOR_FURTHER}
-                  name="Further received"
-                  radius={[4, 4, 0, 0]}
-                  onClick={(d: unknown) => {
-                    const month = (d as { payload?: { month?: string } })?.payload?.month;
-                    if (month) toggleMonth(month);
-                  }}
-                  style={{ cursor: 'pointer' }}
-                />
-                <Line
-                  type="stepAfter"
-                  dataKey="payable"
-                  stroke={COLOR_PAYABLE}
-                  strokeWidth={2}
-                  strokeDasharray="4 4"
-                  dot={{ r: 2.5, fill: COLOR_PAYABLE, stroke: COLOR_PAYABLE }}
-                  activeDot={{ r: 3.5 }}
-                  name="Payable"
-                  isAnimationActive={false}
-                />
+                {isTotalView ? (
+                  <>
+                    <Bar
+                      dataKey="initial"
+                      stackId="total"
+                      fill={COLOR_INITIAL}
+                      name="Initial received"
+                      radius={[0, 0, 0, 0]}
+                      onClick={(d: unknown) => {
+                        const month = (d as { payload?: { month?: string } })?.payload?.month;
+                        if (month) toggleMonth(month);
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <Bar
+                      dataKey="further"
+                      stackId="total"
+                      fill={COLOR_FURTHER}
+                      name="Further received"
+                      radius={[0, 0, 0, 0]}
+                      onClick={(d: unknown) => {
+                        const month = (d as { payload?: { month?: string } })?.payload?.month;
+                        if (month) toggleMonth(month);
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <Bar
+                      dataKey="fees"
+                      stackId="total"
+                      fill={COLOR_FEES}
+                      name="Fees & charges"
+                      radius={[4, 4, 0, 0]}
+                      onClick={(d: unknown) => {
+                        const month = (d as { payload?: { month?: string } })?.payload?.month;
+                        if (month) toggleMonth(month);
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Bar
+                      dataKey="initial"
+                      stackId="received"
+                      fill={COLOR_INITIAL}
+                      name="Initial received"
+                      radius={[0, 0, 0, 0]}
+                      onClick={(d: unknown) => {
+                        const month = (d as { payload?: { month?: string } })?.payload?.month;
+                        if (month) toggleMonth(month);
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <Bar
+                      dataKey="further"
+                      stackId="received"
+                      fill={COLOR_FURTHER}
+                      name="Further received"
+                      radius={[4, 4, 0, 0]}
+                      onClick={(d: unknown) => {
+                        const month = (d as { payload?: { month?: string } })?.payload?.month;
+                        if (month) toggleMonth(month);
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <Line
+                      type="stepAfter"
+                      dataKey="payable"
+                      stroke={COLOR_PAYABLE}
+                      strokeWidth={2}
+                      strokeDasharray="4 4"
+                      dot={{ r: 2.5, fill: COLOR_PAYABLE, stroke: COLOR_PAYABLE }}
+                      activeDot={{ r: 3.5 }}
+                      name="Payable"
+                      isAnimationActive={false}
+                    />
+                  </>
+                )}
               </ComposedChart>
             </ResponsiveContainer>
           </div>
 
-          <Legend />
+          <Legend view={view} />
 
           <div className="mt-3 flex flex-wrap gap-1.5">
             {data.map((d) => {
@@ -149,7 +223,7 @@ export function MoMChart({
 
           {expandedRow && (
             <DrillPanel title={`${formatMonthYear(expandedRow.month)} — where the month's numbers came from`}>
-              <MonthDrill row={expandedRow} />
+              <MonthDrill row={expandedRow} view={view} />
             </DrillPanel>
           )}
         </>
@@ -158,7 +232,7 @@ export function MoMChart({
   );
 }
 
-function MonthDrill({ row }: { row: ChartRow }) {
+function MonthDrill({ row, view }: { row: ChartRow; view: ViewMode }) {
   const initial: BreakdownItem[] = row.initialBreakdown.map((e) => ({
     label: e.purposeName,
     display: formatNairaCompact(e.amount),
@@ -169,11 +243,50 @@ function MonthDrill({ row }: { row: ChartRow }) {
     display: formatNairaCompact(e.amount),
     weight: e.amount,
   }));
+  const fees: BreakdownItem[] = row.feesBreakdown.map((e) => ({
+    label: e.purposeName,
+    display: formatNairaCompact(e.amount),
+    weight: e.amount,
+  }));
   const payable: BreakdownItem[] = row.payableBreakdown.map((e) => ({
     label: `${e.plotTypeName} (${formatNumber(e.count)})`,
     display: formatNairaCompact(e.payable),
     weight: e.payable,
   }));
+
+  if (view === 'total-revenue') {
+    return (
+      <>
+        <div className="mb-3 text-xs text-slate-600">
+          Total revenue this month:{' '}
+          <span className="font-semibold tabular-nums text-slate-900">
+            {formatNairaCompact(row.totalRevenue)}
+          </span>
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <div>
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-sky-800">
+              Initial received • {formatNairaCompact(row.initial)}
+            </div>
+            <BreakdownList items={initial} emptyMessage="None this month." />
+          </div>
+          <div>
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
+              Further received • {formatNairaCompact(row.further)}
+            </div>
+            <BreakdownList items={further} emptyMessage="None this month." />
+          </div>
+          <div>
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-sky-600">
+              Fees &amp; charges • {formatNairaCompact(row.fees)}
+            </div>
+            <BreakdownList items={fees} emptyMessage="None this month." />
+          </div>
+        </div>
+      </>
+    );
+  }
+
   return (
     <div className="grid gap-4 md:grid-cols-3">
       <div>
@@ -198,21 +311,68 @@ function MonthDrill({ row }: { row: ChartRow }) {
   );
 }
 
+function ViewToggle({
+  view,
+  onChange,
+}: {
+  view: ViewMode;
+  onChange: (next: ViewMode) => void;
+}) {
+  const opts: Array<{ id: ViewMode; label: string }> = [
+    { id: 'received-vs-payable', label: 'Received vs Payable' },
+    { id: 'total-revenue',       label: 'Total Revenue'      },
+  ];
+  return (
+    <div
+      role="tablist"
+      aria-label="Chart view"
+      className="inline-flex rounded-lg bg-slate-100 p-0.5 text-[11px] font-medium"
+    >
+      {opts.map((o) => {
+        const active = o.id === view;
+        return (
+          <button
+            key={o.id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(o.id)}
+            className={[
+              'rounded-md px-2.5 py-1 transition-colors cursor-pointer',
+              'focus:outline-none focus:ring-2 focus:ring-accent',
+              active
+                ? 'bg-white text-accent shadow-sm ring-1 ring-inset ring-slate-200'
+                : 'text-slate-600 hover:text-slate-900',
+            ].join(' ')}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 type TickProps = {
   x?: number | string;
   y?: number | string;
   payload?: { value: string };
   rows: ChartRow[];
   selected: string | null;
+  showOwed: boolean;
 };
 
-function MonthOwedTick({ x = 0, y = 0, payload, rows, selected }: TickProps) {
+function MonthOwedTick({ x = 0, y = 0, payload, rows, selected, showOwed }: TickProps) {
   if (!payload) return null;
   const row = rows.find((r) => r.month === payload.value);
   const owed = row?.owed ?? 0;
+  const total = row?.totalRevenue ?? 0;
   const xn = typeof x === 'number' ? x : Number(x) || 0;
   const yn = typeof y === 'number' ? y : Number(y) || 0;
   const isSelected = selected === payload.value;
+  const subline = showOwed
+    ? (owed > 0 ? `Owed ${formatNairaCompact(owed)}` : '')
+    : (total > 0 ? formatNairaCompact(total) : '');
   return (
     <g transform={`translate(${xn}, ${yn})`}>
       <text
@@ -234,18 +394,25 @@ function MonthOwedTick({ x = 0, y = 0, payload, rows, selected }: TickProps) {
         fill="#94A3B8"
         fontSize={10}
       >
-        {owed > 0 ? `Owed ${formatNairaCompact(owed)}` : ''}
+        {subline}
       </text>
     </g>
   );
 }
 
-function Legend() {
-  const items: Array<{ label: string; color: string; style?: 'fill' | 'dash' }> = [
-    { label: 'Initial received', color: COLOR_INITIAL, style: 'fill' },
-    { label: 'Further received', color: COLOR_FURTHER, style: 'fill' },
-    { label: 'Payable',          color: COLOR_PAYABLE, style: 'dash' },
-  ];
+function Legend({ view }: { view: ViewMode }) {
+  const items: Array<{ label: string; color: string; style?: 'fill' | 'dash' }> =
+    view === 'total-revenue'
+      ? [
+          { label: 'Initial received', color: COLOR_INITIAL, style: 'fill' },
+          { label: 'Further received', color: COLOR_FURTHER, style: 'fill' },
+          { label: 'Fees & charges',   color: COLOR_FEES,    style: 'fill' },
+        ]
+      : [
+          { label: 'Initial received', color: COLOR_INITIAL, style: 'fill' },
+          { label: 'Further received', color: COLOR_FURTHER, style: 'fill' },
+          { label: 'Payable',          color: COLOR_PAYABLE, style: 'dash' },
+        ];
   return (
     <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
       {items.map((i) => (
@@ -281,19 +448,28 @@ function MoMTooltip({
   active,
   payload,
   label,
+  view,
 }: {
   active?: boolean;
   payload?: TooltipPayloadEntry[];
   label?: string;
+  view: ViewMode;
 }) {
   if (!active || !payload || payload.length === 0 || !label) return null;
   const row = payload[0]?.payload;
   if (!row) return null;
-  const rows: Array<[string, number, string]> = [
-    ['Initial received', row.initial, COLOR_INITIAL],
-    ['Further received', row.further, COLOR_FURTHER],
-    ['Payable',          row.payable, COLOR_PAYABLE],
-  ];
+  const rows: Array<[string, number, string]> =
+    view === 'total-revenue'
+      ? [
+          ['Initial received', row.initial, COLOR_INITIAL],
+          ['Further received', row.further, COLOR_FURTHER],
+          ['Fees & charges',   row.fees,    COLOR_FEES],
+        ]
+      : [
+          ['Initial received', row.initial, COLOR_INITIAL],
+          ['Further received', row.further, COLOR_FURTHER],
+          ['Payable',          row.payable, COLOR_PAYABLE],
+        ];
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-md">
       <div className="text-xs font-semibold text-slate-900">{formatMonthYear(label)}</div>
@@ -314,14 +490,21 @@ function MoMTooltip({
               </td>
             </tr>
           ))}
-          {row.owed > 0 && (
+          {view === 'total-revenue' ? (
+            <tr>
+              <td className="pr-2 pt-1 font-semibold text-slate-700">Total</td>
+              <td className="pt-1 text-right tabular-nums font-semibold text-slate-900">
+                {formatNairaCompact(row.totalRevenue)}
+              </td>
+            </tr>
+          ) : row.owed > 0 ? (
             <tr>
               <td className="pr-2 pt-1 text-slate-500">Owed</td>
               <td className="pt-1 text-right tabular-nums text-slate-700">
                 {formatNairaCompact(row.owed)}
               </td>
             </tr>
-          )}
+          ) : null}
           <tr>
             <td colSpan={2} className="pt-1 text-[10px] italic text-slate-400">
               tap bar / chip below for breakdown

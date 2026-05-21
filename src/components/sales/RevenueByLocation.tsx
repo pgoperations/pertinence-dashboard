@@ -3,7 +3,7 @@ import { PanelCard } from '../PanelCard';
 import { StatusChip } from '../StatusChip';
 import { IconChevronRight } from '../icons';
 import { DrillPanel } from './DrillPanel';
-import { formatNairaCompact, formatMonthYear } from '../../lib/format';
+import { formatNairaCompact, formatNumber, formatMonthYear } from '../../lib/format';
 import type { RevenueByLocationRow } from '../../lib/queries/sales';
 
 const TOP_N = 8;
@@ -14,10 +14,12 @@ const COLOR_RECEIVED = '#0369A1';
 export function RevenueByLocation({
   rows,
   otherReceived,
+  otherDealCount,
   loading,
 }: {
   rows: RevenueByLocationRow[];
   otherReceived: number;
+  otherDealCount: number;
   loading: boolean;
 }) {
   const [showAll, setShowAll] = useState(false);
@@ -107,9 +109,13 @@ export function RevenueByLocation({
           <span className="font-semibold tabular-nums text-slate-700">
             {formatNairaCompact(otherReceived)}
           </span>{' '}
-          received without a location tag — typically fees &amp; general deposits
-          (Allocation, Security, Change of Ownership, etc.) that don&rsquo;t belong to a
-          specific land project.
+          across{' '}
+          <span className="font-semibold tabular-nums text-slate-700">
+            {formatNumber(otherDealCount)}
+          </span>{' '}
+          transaction{otherDealCount === 1 ? '' : 's'} without a location tag —
+          typically fees &amp; general deposits (Allocation, Security, Change of
+          Ownership, etc.) that don&rsquo;t belong to a specific land project.
         </p>
       )}
     </PanelCard>
@@ -141,14 +147,19 @@ function LocationRow({
         className="block w-full rounded-lg px-1 py-1 text-left focus:outline-none focus:ring-2 focus:ring-accent cursor-pointer"
       >
         <div className="flex items-baseline justify-between gap-2">
-          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-900">
+          <span className="inline-flex items-baseline gap-1.5 text-sm font-medium text-slate-900">
             <IconChevronRight
               className={[
-                'h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform',
+                'h-3.5 w-3.5 shrink-0 self-center text-slate-400 transition-transform',
                 isOpen ? 'rotate-90 text-accent' : '',
               ].join(' ')}
             />
-            {row.locationName}
+            <span>{row.locationName}</span>
+            {row.dealCount > 0 && (
+              <span className="text-[11px] font-normal text-slate-500 tabular-nums">
+                · {formatNumber(row.dealCount)} {row.dealCount === 1 ? 'deal' : 'deals'}
+              </span>
+            )}
           </span>
           {owed > 0 ? (
             <span className="text-[11px] uppercase tracking-wide text-slate-500">

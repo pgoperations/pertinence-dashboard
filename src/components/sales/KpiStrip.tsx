@@ -11,7 +11,7 @@ import type {
   SalesPanelSources,
 } from '../../lib/queries/sales';
 
-type TileId = 'plots' | 'payable' | 'initial' | 'further';
+type TileId = 'total' | 'plots' | 'payable' | 'initial' | 'further';
 
 type Tile = {
   id: TileId;
@@ -34,6 +34,8 @@ export function KpiStrip({
   const [open, setOpen] = useState<TileId | null>(null);
   const [feesOpen, setFeesOpen] = useState(false);
   const toggle = (id: TileId) => setOpen((cur) => (cur === id ? null : id));
+
+  const heroOpen = open === 'total';
 
   const tiles: Tile[] = [
     {
@@ -71,6 +73,40 @@ export function KpiStrip({
       right={asOf ? <StatusChip tone="slate">As of {formatAsOf(asOf)}</StatusChip> : undefined}
       source="Bank Deposit 2026 LAND (received) • Weekly Sales 2026 (payable + plot count). Fees & charges shown separately on the panel."
     >
+      <button
+        type="button"
+        onClick={() => toggle('total')}
+        disabled={loading}
+        aria-expanded={heroOpen}
+        aria-controls="kpi-drill"
+        className={[
+          'group mb-3 flex w-full flex-col rounded-xl p-4 text-left ring-1 ring-inset transition-colors md:mb-4 md:p-5',
+          'focus:outline-none focus:ring-2 focus:ring-accent',
+          heroOpen
+            ? 'bg-white ring-accent shadow-sm'
+            : 'bg-gradient-to-br from-accent/10 to-slate-50 ring-accent/30 hover:from-accent/15 hover:ring-accent/50',
+          loading ? 'cursor-default opacity-70' : 'cursor-pointer',
+        ].join(' ')}
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-accent">
+            Total revenue inflow
+          </span>
+          <IconChevronDown
+            className={[
+              'h-4 w-4 shrink-0 text-accent transition-transform',
+              heroOpen ? 'rotate-180' : '',
+            ].join(' ')}
+          />
+        </div>
+        <div className="mt-1 font-heading text-3xl font-bold tabular-nums text-slate-900 md:text-4xl">
+          {loading ? '—' : formatNairaCompact(kpis.totalRevenueInflow)}
+        </div>
+        <div className="mt-1 text-[11px] text-slate-500">
+          Initial + Further + Fees received (Bank Deposit 2026 LAND)
+        </div>
+      </button>
+
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
         {tiles.map((t) => {
           const isOpen = open === t.id;
@@ -164,7 +200,8 @@ export function KpiStrip({
 
 function drillTitle(id: TileId): string {
   switch (id) {
-    case 'plots': return 'Plots sold — by plot type';
+    case 'total':   return 'Total revenue inflow — by stage';
+    case 'plots':   return 'Plots sold — by plot type';
     case 'payable': return 'Total payable — by plot type';
     case 'initial': return 'Initial received — by purpose';
     case 'further': return 'Further received — by purpose';
@@ -173,6 +210,14 @@ function drillTitle(id: TileId): string {
 
 function renderDrill(id: TileId, b: KpiBreakdowns) {
   switch (id) {
+    case 'total': {
+      const items: BreakdownItem[] = b.totalRevenueInflow.map((e) => ({
+        label: e.label,
+        display: formatNairaCompact(e.amount),
+        weight: e.amount,
+      }));
+      return <BreakdownList items={items} emptyMessage="No receipts in this range." />;
+    }
     case 'plots': {
       const items: BreakdownItem[] = b.plotsSold.map((e) => ({
         label: e.plotTypeName,
