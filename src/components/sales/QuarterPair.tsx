@@ -56,7 +56,11 @@ export function QuarterPair({
 
   const totalQ1 = quarters.reduce((a, r) => a + r.q1, 0);
   const totalQ2 = quarters.reduce((a, r) => a + r.q2, 0);
-  const deltaPct = totalQ1 > 0 ? ((totalQ2 - totalQ1) / totalQ1) * 100 : null;
+  // Suppress % delta while Q2 is open: comparing a finished quarter against a
+  // half-finished one would read as a huge "drop" that's really just elapsed
+  // time, not performance. Per-row chips also gate on q2InProgress below.
+  const deltaPct =
+    q2InProgress || totalQ1 === 0 ? null : ((totalQ2 - totalQ1) / totalQ1) * 100;
 
   const source = buildSource(totalQ1, totalQ2, deltaPct, q2InProgress);
 
@@ -131,7 +135,9 @@ function QuarterRowView({
 }) {
   const q1Pct = (row.q1 / max) * 100;
   const q2Pct = (row.q2 / max) * 100;
-  const deltaPct = row.q1 > 0 ? ((row.q2 - row.q1) / row.q1) * 100 : null;
+  // See note in parent: % comparison is suppressed while Q2 is still open.
+  const deltaPct =
+    q2InProgress || row.q1 === 0 ? null : ((row.q2 - row.q1) / row.q1) * 100;
 
   return (
     <li>
