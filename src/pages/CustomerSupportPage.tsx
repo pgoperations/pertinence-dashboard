@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { SectionHeading } from '../components/SectionHeading';
 import { StatusBanner } from '../components/StatusBanner';
-import { PlaceholderCard } from '../components/PlaceholderCard';
 import { BrandToggle } from '../components/customer-support/BrandToggle';
 import { CsKpiStrip } from '../components/customer-support/CsKpiStrip';
 import { EnquiriesByChannel } from '../components/customer-support/EnquiriesByChannel';
 import { ComplaintsByCategory } from '../components/customer-support/ComplaintsByCategory';
+import { CsMonthlyTrend } from '../components/customer-support/CsMonthlyTrend';
+import { GreyedCard } from '../components/sales/GreyedCard';
 import { useDateRange } from '../hooks/useDateRange';
 import {
   loadCsPanelData,
@@ -55,6 +56,7 @@ export default function CustomerSupportPage() {
   };
   const byChannel = data?.byChannel ?? [];
   const byCategory = data?.byCategory ?? [];
+  const monthly = data?.monthly ?? [];
   const sources = data?.sources ?? { logsUpdatedAt: null };
   const brands = data?.brands ?? [];
 
@@ -92,19 +94,22 @@ export default function CustomerSupportPage() {
 
         <ComplaintsByCategory rows={byCategory} loading={loading} />
 
-        <PlaceholderCard
-          title="Monthly trend"
-          description="Coming in Commit 2 — enquiries vs complaints bars per month with per-bar drill into that month's channel + category split."
-        >
-          <div className="h-32 rounded-lg bg-brand-100" aria-hidden />
-        </PlaceholderCard>
+        <CsMonthlyTrend monthly={monthly} loading={loading} />
 
-        <PlaceholderCard
-          title="Out-of-scope (greyed)"
-          description="Coming in Commit 2 — Avg resolution time, Per-rep breakdown, Customer satisfaction score. Each names its specific source gap."
-        >
-          <div className="h-20 rounded-lg bg-brand-100" aria-hidden />
-        </PlaceholderCard>
+        <div className="grid gap-4 md:grid-cols-3 md:gap-5">
+          <GreyedCard
+            title="Avg resolution time"
+            blocker="Resolution-time fields (cols O–Q on each rep tab) need supervisor input on time-zone / business-hours math. Migration 014 sets avg_resolution_minutes to NULL until that decision lands."
+          />
+          <GreyedCard
+            title="Per-rep breakdown"
+            blocker="Per-rep metrics (Catherine / Mariam / Mary / Yetunde / Lovinal) — currently aggregated to brand level. Phase 2 candidate once the supervisor confirms the configurable roster."
+          />
+          <GreyedCard
+            title="Customer satisfaction"
+            blocker="No CSAT survey source today. Manual-entry form or post-resolution survey pending."
+          />
+        </div>
       </div>
     </>
   );
