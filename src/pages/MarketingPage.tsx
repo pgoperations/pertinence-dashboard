@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { SectionHeading } from '../components/SectionHeading';
 import { StatusBanner } from '../components/StatusBanner';
-import { PlaceholderCard } from '../components/PlaceholderCard';
 import { MarketingKpiStrip } from '../components/marketing/MarketingKpiStrip';
 import { SpendByCategory } from '../components/marketing/SpendByCategory';
+import { MonthlySpendChart } from '../components/marketing/MonthlySpendChart';
+import { GreyedCard } from '../components/sales/GreyedCard';
 import { useDateRange } from '../hooks/useDateRange';
 import {
   loadMarketingPanelData,
@@ -49,6 +50,7 @@ export default function MarketingPage() {
     avgMonthlySpend: [],
   };
   const byCategory = data?.byCategory ?? [];
+  const monthly = data?.monthly ?? [];
   const largestCategory = byCategory[0]
     ? { name: byCategory[0].categoryName, amount: byCategory[0].amount }
     : null;
@@ -83,19 +85,22 @@ export default function MarketingPage() {
           loading={loading}
         />
 
-        <PlaceholderCard
-          title="Monthly spend trend"
-          description="Coming in Commit 2 — Recharts bars with per-month drill into the category split."
-        >
-          <div className="h-32 rounded-lg bg-brand-100" aria-hidden />
-        </PlaceholderCard>
+        <MonthlySpendChart monthly={monthly} loading={loading} />
 
-        <PlaceholderCard
-          title="Out-of-scope (greyed)"
-          description="Coming in Commit 2 — Billboard cost, Activities-with-metrics table, Income side. Each card names its specific blocker."
-        >
-          <div className="h-20 rounded-lg bg-brand-100" aria-hidden />
-        </PlaceholderCard>
+        <div className="grid gap-4 md:grid-cols-3 md:gap-5">
+          <GreyedCard
+            title="Billboard cost"
+            blocker="Finance-funded outside the petty cashbook (₦19.95M H1 2025 ref: Ajah ₦13.5M + Egbeda ₦6.45M). Manual-entry form pending."
+          />
+          <GreyedCard
+            title="Activities with metrics"
+            blocker="Activity × month × expense × attendance/recruitment table from H1 2025 PDF. Needs a structured activity log — manual-entry form pending."
+          />
+          <GreyedCard
+            title="Income side"
+            blocker="Petty cashbook receipts (Balance b/f, transfers) excluded from v1 ingest. Manual reconciliation required."
+          />
+        </div>
       </div>
     </>
   );
