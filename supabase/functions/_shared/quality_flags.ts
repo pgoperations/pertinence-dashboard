@@ -54,6 +54,19 @@ export const QUALITY_FLAGS = {
   // by a few days. Tracks how many rows are "supervisor-pending" so the gap
   // is visible. Value is the column A raw date used.
   DATE_FALLBACK_TO_A: 'date_fallback_to_a',
+
+  // Realtor metrics: a week or total cell held an unexpected non-numeric,
+  // non-NIL string. Numeric coercion treated it as 0 to keep aggregates
+  // computable; the raw value is preserved in raw_row for inspection. Adding
+  // a NIL-variant alias on the parser side is the typical fix.
+  NON_NUMERIC_VALUE: 'non_numeric_value',
+
+  // Realtor metrics: the source's Total column was non-null but disagreed
+  // with the sum of Week 1–5 cells. Surfaced per supervisor #3 ("never
+  // silently reconcile"). Detail carries both numbers. The fact row's
+  // `total` column always carries our computed week-sum; raw_row preserves
+  // the supervisor's entered Total for traceback.
+  TOTAL_MISMATCH: 'total_mismatch',
 } as const;
 
 export type QualityFlagKey = (typeof QUALITY_FLAGS)[keyof typeof QUALITY_FLAGS];

@@ -75,6 +75,27 @@ export async function loadComplaintAliases(
   return map;
 }
 
+// Realtor metric aliases: source-label text → canonical metric_key. Same
+// pattern as the other alias loaders. Lookup is case-insensitive via lower();
+// callers also normalize whitespace before lookup since the 2026 source tab
+// has inconsistent spacing on some labels (e.g. "Referrals +Business Reps").
+export async function loadRealtorMetricAliases(
+  supabase: SupabaseClient,
+): Promise<Map<string, string>> {
+  const { data, error } = await supabase
+    .from('realtor_metric_aliases')
+    .select('alias, metric_key');
+  if (error) throw new Error(`realtor_metric_aliases load failed: ${error.message}`);
+  const map = new Map<string, string>();
+  for (const row of data ?? []) {
+    if (row.alias && row.metric_key) {
+      map.set(String(row.alias).toLowerCase(), row.metric_key as string);
+    }
+  }
+  return map;
+}
+
+
 // Rep lookups for Customer Support: tab name (uppercase, e.g. "CATHERINE")
 // maps to the seeded customer_service_reps row (mixed case, e.g. "Catherine").
 // Returns lower(name) → { id, brand_id } so the ingest can resolve every row
