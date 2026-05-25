@@ -94,7 +94,10 @@ export function AppShell() {
       </header>
 
       <div className="mx-auto flex max-w-7xl gap-6 px-4 pb-24 pt-5 md:px-6 md:pb-10 md:pt-8">
-        <aside className="sticky top-[73px] hidden h-[calc(100vh-89px)] w-56 shrink-0 self-start md:flex md:flex-col">
+        {/* Sticky top matches the sidebar's natural y position
+            (61px header + 32px pt-8 = 93px). With those equal, the sidebar
+            is pinned from scroll-0 and never travels with the page. */}
+        <aside className="sticky top-[93px] hidden h-[calc(100vh-117px)] w-56 shrink-0 self-start md:flex md:flex-col">
           <nav aria-label="Primary" className="flex flex-col gap-1">
             {NAV.map(({ to, label, Icon }) => (
               <NavLink
