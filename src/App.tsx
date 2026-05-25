@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppShell } from './components/AppShell';
+import { RefreshProvider } from './hooks/useRefresh';
 import SignInPage from './pages/SignInPage';
 import SalesPage from './pages/SalesPage';
 import MarketingPage from './pages/MarketingPage';
@@ -17,7 +18,9 @@ export default function App() {
       <Route
         element={
           <ProtectedRoute>
-            <AppShell />
+            <RefreshProvider>
+              <AppShell />
+            </RefreshProvider>
           </ProtectedRoute>
         }
       >

@@ -8,6 +8,7 @@ import { ComplaintsByCategory } from '../components/customer-support/ComplaintsB
 import { CsMonthlyTrend } from '../components/customer-support/CsMonthlyTrend';
 import { GreyedCard } from '../components/sales/GreyedCard';
 import { useDateRange } from '../hooks/useDateRange';
+import { useRefresh } from '../hooks/useRefresh';
 import {
   loadCsPanelData,
   type BrandFilter,
@@ -16,6 +17,7 @@ import {
 
 export default function CustomerSupportPage() {
   const { range } = useDateRange();
+  const { counter: refreshCounter } = useRefresh();
   const [brand, setBrand] = useState<BrandFilter>('ppl');
   const [data, setData] = useState<CsPanelData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -38,7 +40,7 @@ export default function CustomerSupportPage() {
     return () => {
       cancelled = true;
     };
-  }, [range, brand]);
+  }, [range, brand, refreshCounter]);
 
   const kpis = data?.kpis ?? {
     totalLogs: 0,

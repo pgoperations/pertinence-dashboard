@@ -15,8 +15,8 @@ import { formatNumber, formatMonthShort, formatMonthYear } from '../../lib/forma
 import type { CsMonthBucket } from '../../lib/queries/customerSupport';
 
 const COLOR_ENQ = '#0369A1';      // sky-700 — enquiries
-const COLOR_COMP = '#475569';     // slate-600 — complaints
-const COLOR_RESOLVED = '#0EA5E9'; // sky-500 — resolved overlay on complaints
+const COLOR_COMP = '#334155';     // slate-700 — complaints unresolved
+const COLOR_RESOLVED = '#059669'; // emerald-600 — resolved (distinct hue → reads as positive outcome)
 const COLOR_GRID = '#E2E8F0';
 
 export function CsMonthlyTrend({

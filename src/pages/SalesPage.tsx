@@ -11,6 +11,7 @@ import { TopDeals } from '../components/sales/TopDeals';
 import { WeeklyDetail } from '../components/sales/WeeklyDetail';
 import { GreyedCard } from '../components/sales/GreyedCard';
 import { useDateRange } from '../hooks/useDateRange';
+import { useRefresh } from '../hooks/useRefresh';
 import {
   loadPurposeStages,
   loadSalesPanelData,
@@ -20,6 +21,7 @@ import {
 
 export default function SalesPage() {
   const { range } = useDateRange();
+  const { counter: refreshCounter } = useRefresh();
   const [stages, setStages] = useState<PurposeStages | null>(null);
   const [data, setData] = useState<SalesPanelData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -37,7 +39,7 @@ export default function SalesPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshCounter]);
 
   useEffect(() => {
     if (!stages) return;
@@ -57,7 +59,7 @@ export default function SalesPage() {
     return () => {
       cancelled = true;
     };
-  }, [range, stages]);
+  }, [range, stages, refreshCounter]);
 
   const kpis = data?.kpis ?? {
     plotsSold: 0,

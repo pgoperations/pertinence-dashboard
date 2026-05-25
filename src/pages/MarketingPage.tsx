@@ -6,6 +6,7 @@ import { SpendByCategory } from '../components/marketing/SpendByCategory';
 import { MonthlySpendChart } from '../components/marketing/MonthlySpendChart';
 import { GreyedCard } from '../components/sales/GreyedCard';
 import { useDateRange } from '../hooks/useDateRange';
+import { useRefresh } from '../hooks/useRefresh';
 import {
   loadMarketingPanelData,
   type MarketingPanelData,
@@ -13,6 +14,7 @@ import {
 
 export default function MarketingPage() {
   const { range } = useDateRange();
+  const { counter: refreshCounter } = useRefresh();
   const [data, setData] = useState<MarketingPanelData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +36,7 @@ export default function MarketingPage() {
     return () => {
       cancelled = true;
     };
-  }, [range]);
+  }, [range, refreshCounter]);
 
   const kpis = data?.kpis ?? {
     totalSpend: 0,

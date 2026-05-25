@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import clsx from 'clsx';
 import { useAuth } from '../hooks/useAuth';
+import { useRefresh } from '../hooks/useRefresh';
 import {
   IconSales,
   IconMarketing,
@@ -8,6 +9,7 @@ import {
   IconRealtors,
   IconMedia,
   IconLogOut,
+  IconRefresh,
 } from './icons';
 import { DateRangePicker } from './DateRangePicker';
 import type { ComponentType, SVGProps } from 'react';
@@ -29,12 +31,14 @@ const NAV: NavItem[] = [
 
 export function AppShell() {
   const { profile, signOut } = useAuth();
+  const { refresh, refreshing } = useRefresh();
   const initials = (profile?.full_name ?? profile?.email ?? '?')
     .split(/[\s@]+/)
     .filter(Boolean)
     .slice(0, 2)
     .map((s) => s[0]?.toUpperCase())
     .join('');
+  const displayName = profile?.full_name ?? profile?.email ?? 'Signed in';
 
   return (
     <div className="min-h-screen bg-brand-50 text-brand-900">
@@ -60,25 +64,37 @@ export function AppShell() {
 
             <button
               type="button"
-              onClick={() => void signOut()}
-              className="group inline-flex h-10 items-center gap-2 rounded-lg border border-brand-200 bg-white px-2.5 text-sm font-medium text-brand-700 transition-colors duration-200 hover:border-brand-300 hover:bg-brand-50 cursor-pointer md:px-3"
-              title={profile?.email ?? 'Sign out'}
+              onClick={refresh}
+              disabled={refreshing}
+              aria-label="Refresh data"
+              title="Refresh data"
+              className={clsx(
+                'group inline-flex h-10 items-center gap-2 rounded-lg border border-brand-200 bg-white px-2.5 text-sm font-medium text-brand-700 transition-colors duration-200 cursor-pointer md:px-3',
+                'hover:border-accent hover:bg-accent/5 hover:text-accent',
+                'focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-1',
+                refreshing && 'cursor-default opacity-80',
+              )}
             >
-              <span
-                className="grid h-7 w-7 place-items-center rounded-full bg-brand-900 text-xs font-semibold text-white"
-                aria-hidden
-              >
-                {initials || '?'}
-              </span>
-              <span className="hidden md:inline">Sign out</span>
-              <IconLogOut className="h-4 w-4 md:hidden" />
+              <IconRefresh className={clsx('h-4 w-4', refreshing && 'animate-spin')} />
+              <span className="hidden md:inline">{refreshing ? 'Refreshing…' : 'Refresh'}</span>
+            </button>
+
+            {/* Mobile-only sign-out — no sidebar to host the desktop sign-out card. */}
+            <button
+              type="button"
+              onClick={() => void signOut()}
+              aria-label="Sign out"
+              title={profile?.email ?? 'Sign out'}
+              className="group inline-flex h-10 w-10 items-center justify-center rounded-lg border border-brand-200 bg-white text-brand-700 transition-colors duration-200 hover:border-brand-300 hover:bg-brand-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-1 md:hidden"
+            >
+              <IconLogOut className="h-4 w-4" />
             </button>
           </div>
         </div>
       </header>
 
       <div className="mx-auto flex max-w-7xl gap-6 px-4 pb-24 pt-5 md:px-6 md:pb-10 md:pt-8">
-        <aside className="sticky top-[73px] hidden h-[calc(100vh-89px)] w-56 shrink-0 self-start md:block">
+        <aside className="sticky top-[73px] hidden h-[calc(100vh-89px)] w-56 shrink-0 self-start md:flex md:flex-col">
           <nav aria-label="Primary" className="flex flex-col gap-1">
             {NAV.map(({ to, label, Icon }) => (
               <NavLink
@@ -98,6 +114,29 @@ export function AppShell() {
               </NavLink>
             ))}
           </nav>
+
+          <div className="mt-auto pt-4">
+            <button
+              type="button"
+              onClick={() => void signOut()}
+              title={profile?.email ?? 'Sign out'}
+              className="group flex w-full items-center gap-3 rounded-lg border border-brand-200 bg-white px-2.5 py-2 text-left transition-colors duration-200 hover:border-brand-300 hover:bg-brand-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-1"
+            >
+              <span
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-900 text-xs font-semibold text-white"
+                aria-hidden
+              >
+                {initials || '?'}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-semibold text-brand-900">
+                  {displayName}
+                </span>
+                <span className="block text-[11px] text-brand-500">Sign out</span>
+              </span>
+              <IconLogOut className="h-4 w-4 shrink-0 text-brand-500 group-hover:text-brand-700" />
+            </button>
+          </div>
         </aside>
 
         <main className="min-w-0 flex-1">

@@ -6,8 +6,8 @@ import { formatNumber, formatMonthYear } from '../../lib/format';
 import type { CategoryRow } from '../../lib/queries/customerSupport';
 
 const TOP_N = 8;
-const COLOR_TOTAL = '#94A3B8'; // slate-400 — outer "total complaints" bar
-const COLOR_RESOLVED = '#0369A1'; // sky-700 — overlay for resolved count
+const COLOR_TOTAL = '#94A3B8';    // slate-400 — outer "total complaints" bar
+const COLOR_RESOLVED = '#059669'; // emerald-600 — resolved overlay (positive outcome, distinct from sky)
 
 export function ComplaintsByCategory({
   rows,

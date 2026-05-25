@@ -22,10 +22,10 @@ type ChartRow = SalesMonthBucket & {
 
 type ViewMode = 'received-vs-payable' | 'total-revenue';
 
-const COLOR_INITIAL = '#0369A1';
-const COLOR_FURTHER = '#475569';
-const COLOR_FEES = '#0EA5E9';
-const COLOR_PAYABLE = '#94A3B8';
+const COLOR_INITIAL = '#0369A1'; // sky-700
+const COLOR_FURTHER = '#334155'; // slate-700
+const COLOR_FEES = '#8B5CF6';    // violet-500 — third tone, distinct from both sky and slate
+const COLOR_PAYABLE = '#94A3B8'; // slate-400
 const COLOR_GRID = '#E2E8F0';
 
 export function MoMChart({
