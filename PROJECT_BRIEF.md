@@ -102,7 +102,8 @@ Plus global date-range selector driving all sections.
 6. Marketing → Customer Support → Realtor Management sections
 7. Media & Content with manual entry forms for the 4 brands
 8. Rule-based narrative engine, per-section, cached per period
-9. Manual refresh button, polish, Netlify deploy
+9. **Automated ingest scheduling + admin "Re-pull from Sheets" button** — pg_cron / Supabase Scheduled Functions for all six ingest Edge Functions on a 15-min cadence, plus an admin-only button in the shell that re-invokes the full ingest pipeline on demand. HARD requirement for launch: without this, the dashboard never reflects new Sheet edits. The existing header refresh button only re-queries Supabase tables — it does NOT re-pull from Sheets, and ingests currently only run when manually invoked.
+10. Polish, Netlify deploy
 
 ## Open items still needing supervisor confirmation (raise but don't block on)
 

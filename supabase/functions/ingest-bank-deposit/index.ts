@@ -1,8 +1,8 @@
 // Ingest the Bank Deposit Mirror `2026 LAND` tab into public.bank_deposits.
 //
 // Trigger paths:
-//   * Scheduled (every 15 min) via Supabase cron (Phase 3 wiring TBD)
-//   * Manual "Refresh now" button from the dashboard (Phase 5+)
+//   * Scheduled (every 15 min) via Supabase cron — wired in step 9 of the roadmap (HARD launch requirement; not yet deployed)
+//   * Admin "Re-pull from Sheets" button from the dashboard — also step 9
 //
 // Contracts (locked in DESIGN_DECISIONS.md):
 //   * Auth: native Deno crypto.subtle JWT sign (no external libs)
