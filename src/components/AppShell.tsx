@@ -1,7 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import clsx from 'clsx';
 import { useAuth } from '../hooks/useAuth';
-import { useRefresh } from '../hooks/useRefresh';
 import {
   IconSales,
   IconMarketing,
@@ -9,7 +8,6 @@ import {
   IconRealtors,
   IconMedia,
   IconLogOut,
-  IconRefresh,
 } from './icons';
 import { DateRangePicker } from './DateRangePicker';
 import { RepullButton } from './RepullButton';
@@ -32,7 +30,6 @@ const NAV: NavItem[] = [
 
 export function AppShell() {
   const { profile, signOut } = useAuth();
-  const { refresh, refreshing } = useRefresh();
   const initials = (profile?.full_name ?? profile?.email ?? '?')
     .split(/[\s@]+/)
     .filter(Boolean)
@@ -64,23 +61,6 @@ export function AppShell() {
             <DateRangePicker />
 
             <RepullButton />
-
-            <button
-              type="button"
-              onClick={refresh}
-              disabled={refreshing}
-              aria-label="Refresh data"
-              title="Re-query Supabase tables (fast). Use Sync Sheets to pull from Google."
-              className={clsx(
-                'group inline-flex h-10 items-center gap-2 rounded-lg border border-brand-200 bg-white px-2.5 text-sm font-medium text-brand-700 transition-colors duration-200 cursor-pointer md:px-3',
-                'hover:border-accent hover:bg-accent/5 hover:text-accent',
-                'focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-1',
-                refreshing && 'cursor-default opacity-80',
-              )}
-            >
-              <IconRefresh className={clsx('h-4 w-4', refreshing && 'animate-spin')} />
-              <span className="hidden md:inline">{refreshing ? 'Refreshing…' : 'Refresh'}</span>
-            </button>
 
             {/* Mobile-only sign-out — no sidebar to host the desktop sign-out card. */}
             <button

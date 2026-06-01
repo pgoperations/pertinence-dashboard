@@ -200,7 +200,7 @@ export function RepullButton() {
         }}
         aria-label="Pull fresh data from Google Sheets"
         aria-expanded={open}
-        title="Pull fresh data from Google Sheets (~15s) — slower than Refresh"
+        title="Pull fresh data from Google Sheets (~15s)"
         className={clsx(
           'group inline-flex h-10 items-center gap-2 rounded-lg border px-2.5 text-sm font-medium transition-colors duration-200 cursor-pointer md:px-3',
           'focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-1',

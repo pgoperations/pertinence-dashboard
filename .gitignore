@@ -32,3 +32,6 @@ dist-ssr
 # Supabase
 supabase/.branches
 supabase/.temp
+
+# Internal company reports / source PDFs — never commit
+*.pdf
