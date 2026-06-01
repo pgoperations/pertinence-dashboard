@@ -20,7 +20,7 @@ const PLATFORM_DISPLAY: Record<MediaPlatform, { name: string; tone: string }> = 
   youtube: { name: 'YouTube', tone: 'amber' },
 };
 
-const COLOR_BAR = '#0369A1'; // sky-700
+const COLOR_BAR = '#56B845'; // brand green (Pertinence)
 
 export function MediaPanel() {
   const { range } = useDateRange();

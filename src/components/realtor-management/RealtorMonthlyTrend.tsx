@@ -17,11 +17,11 @@ import type {
   MonthlyTrendBucket,
 } from '../../lib/queries/realtor';
 
-const COLOR_REFERRALS = '#0369A1';     // sky-700 — new referrals
+const COLOR_REFERRALS = '#56B845';     // brand green (Pertinence) — new referrals
 const COLOR_BUSINESS_REPS = '#334155'; // slate-700 — new business reps
 const COLOR_GRID = '#E2E8F0';
 
-// Stacked bars: New Referrals (sky-700) + New Business Reps (slate-700)
+// Stacked bars: New Referrals (brand green) + New Business Reps (slate-700)
 // = New Realtors total. Stack reads as a single bar whose pieces are the
 // two recruitment-channel breakdowns. Per-bar click reveals every
 // recruitment + activity metric for that month.
@@ -46,7 +46,7 @@ export function RealtorMonthlyTrend({
   return (
     <PanelCard
       title="Monthly trend"
-      subtitle="New realtor pipeline per month — sky=referrals, slate=business reps. Tap a bar or month chip for that month's full metric breakdown."
+      subtitle="New realtor pipeline per month — green=referrals, slate=business reps. Tap a bar or month chip for that month's full metric breakdown."
       source="Source: realtor_metrics_monthly. Stack equals New Realtors total — where it disagrees with the metric source's 'Number of New Realtors' total, the per-month drill surfaces both."
     >
       {empty ? (
@@ -82,7 +82,7 @@ export function RealtorMonthlyTrend({
                 />
                 <Tooltip
                   content={<TrendTooltip />}
-                  cursor={{ fill: 'rgba(2,132,199,0.05)' }}
+                  cursor={{ fill: 'rgba(86,184,69,0.07)' }}
                 />
                 <Bar
                   dataKey="newReferrals"
@@ -194,7 +194,7 @@ function MonthDrill({
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <div>
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-sky-800">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-accent-emphasis">
             Recruitment metrics
           </div>
           <BreakdownList items={recruitItems} emptyMessage="No data this month." />
@@ -229,7 +229,7 @@ function MonthTick({ x = 0, y = 0, payload, selected }: TickProps) {
         y={0}
         dy={14}
         textAnchor="middle"
-        fill={isSelected ? '#0369A1' : '#475569'}
+        fill={isSelected ? '#56B845' : '#475569'}
         fontSize={11}
         fontWeight={isSelected ? 700 : 500}
       >

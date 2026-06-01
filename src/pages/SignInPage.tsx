@@ -31,8 +31,17 @@ export default function SignInPage() {
   return (
     <main className="min-h-screen grid place-items-center bg-brand-50 px-4 py-10">
       <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <div className="font-heading text-xl font-semibold text-brand-900">Pertinence Dashboard</div>
+        <div className="mb-8 flex flex-col items-center text-center">
+          <img
+            src="/logo.jpeg"
+            alt="Pertinence Group"
+            className="h-16 w-16 object-contain"
+            width={64}
+            height={64}
+          />
+          <div className="mt-4 font-heading text-xl font-semibold text-brand-900">
+            Pertinence Dashboard
+          </div>
           <p className="mt-1 text-sm text-brand-500">Sign in to continue.</p>
         </div>
 
@@ -98,7 +107,7 @@ export default function SignInPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-lg bg-brand-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors duration-200 hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+            className="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors duration-200 hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
           >
             {submitting ? 'Signing in…' : 'Sign in'}
           </button>

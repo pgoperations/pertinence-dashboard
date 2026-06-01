@@ -6,7 +6,7 @@ import { formatNumber, formatMonthYear } from '../../lib/format';
 import type { ChannelRow } from '../../lib/queries/customerSupport';
 
 const TOP_N = 6;
-const COLOR_BAR = '#0369A1';
+const COLOR_BAR = '#56B845'; // brand green (Pertinence)
 
 export function EnquiriesByChannel({
   rows,

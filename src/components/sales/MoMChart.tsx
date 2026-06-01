@@ -22,7 +22,7 @@ type ChartRow = SalesMonthBucket & {
 
 type ViewMode = 'received-vs-payable' | 'total-revenue';
 
-const COLOR_INITIAL = '#0369A1'; // sky-700
+const COLOR_INITIAL = '#56B845'; // brand green (Pertinence) — primary received-stage tone
 const COLOR_FURTHER = '#334155'; // slate-700
 const COLOR_FEES = '#8B5CF6';    // violet-500 — third tone, distinct from both sky and slate
 const COLOR_PAYABLE = '#94A3B8'; // slate-400
@@ -112,7 +112,7 @@ export function MoMChart({
                 />
                 <Tooltip
                   content={<MoMTooltip view={view} />}
-                  cursor={{ fill: 'rgba(2,132,199,0.05)' }}
+                  cursor={{ fill: 'rgba(86,184,69,0.07)' }}
                 />
                 {isTotalView ? (
                   <>
@@ -265,7 +265,7 @@ function MonthDrill({ row, view }: { row: ChartRow; view: ViewMode }) {
         </div>
         <div className="grid gap-4 md:grid-cols-3">
           <div>
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-sky-800">
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-accent-emphasis">
               Initial received • {formatNairaCompact(row.initial)}
             </div>
             <BreakdownList items={initial} emptyMessage="None this month." />
@@ -277,7 +277,7 @@ function MonthDrill({ row, view }: { row: ChartRow; view: ViewMode }) {
             <BreakdownList items={further} emptyMessage="None this month." />
           </div>
           <div>
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-sky-600">
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-violet-700">
               Fees &amp; charges • {formatNairaCompact(row.fees)}
             </div>
             <BreakdownList items={fees} emptyMessage="None this month." />
@@ -290,7 +290,7 @@ function MonthDrill({ row, view }: { row: ChartRow; view: ViewMode }) {
   return (
     <div className="grid gap-4 md:grid-cols-3">
       <div>
-        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-sky-800">
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-accent-emphasis">
           Initial received • {formatNairaCompact(row.initial)}
         </div>
         <BreakdownList items={initial} emptyMessage="None this month." />
@@ -380,7 +380,7 @@ function MonthOwedTick({ x = 0, y = 0, payload, rows, selected, showOwed }: Tick
         y={0}
         dy={12}
         textAnchor="middle"
-        fill={isSelected ? '#0369A1' : '#475569'}
+        fill={isSelected ? '#56B845' : '#475569'}
         fontSize={11}
         fontWeight={isSelected ? 700 : 500}
       >

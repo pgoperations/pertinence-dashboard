@@ -15,8 +15,8 @@ import { DrillPanel } from '../sales/DrillPanel';
 import { formatNairaCompact, formatMonthShort, formatMonthYear } from '../../lib/format';
 import type { MarketingMonthBucket } from '../../lib/queries/marketing';
 
-const COLOR_BAR = '#0369A1';
-const COLOR_BAR_SELECTED = '#0C4A6E';
+const COLOR_BAR = '#56B845';          // brand green (Pertinence)
+const COLOR_BAR_SELECTED = '#2F6E25'; // brand green emphasis (selected)
 const COLOR_GRID = '#E2E8F0';
 
 export function MonthlySpendChart({
@@ -73,7 +73,7 @@ export function MonthlySpendChart({
                   tickFormatter={formatNairaCompact}
                   width={56}
                 />
-                <Tooltip content={<SpendTooltip />} cursor={{ fill: 'rgba(2,132,199,0.05)' }} />
+                <Tooltip content={<SpendTooltip />} cursor={{ fill: 'rgba(86,184,69,0.07)' }} />
                 <Bar
                   dataKey="total"
                   radius={[4, 4, 0, 0]}
@@ -246,7 +246,7 @@ function MonthTick({ x = 0, y = 0, payload, selected }: TickProps) {
         y={0}
         dy={14}
         textAnchor="middle"
-        fill={isSelected ? '#0369A1' : '#475569'}
+        fill={isSelected ? '#56B845' : '#475569'}
         fontSize={11}
         fontWeight={isSelected ? 700 : 500}
       >

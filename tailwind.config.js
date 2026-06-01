@@ -20,9 +20,14 @@ export default {
           800: '#1E293B',
           900: '#0F172A',
         },
+        // Pertinence Group brand green sampled from the logo (#56B845).
+        // hover = ~15% darker; emphasis = even darker for text headings;
+        // soft = light tint for badges, gradients, focus halos.
         accent: {
-          DEFAULT: '#0369A1',
-          hover: '#075985',
+          DEFAULT: '#56B845',
+          hover: '#3F8F32',
+          emphasis: '#2F6E25',
+          soft: '#E8F5E3',
         },
       },
       boxShadow: {

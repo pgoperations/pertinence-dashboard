@@ -7,7 +7,7 @@ import { formatNairaCompact, formatNumber, formatMonthYear } from '../../lib/for
 import type { CategoryRow } from '../../lib/queries/marketing';
 
 const TOP_N = 8;
-const COLOR_BAR = '#0369A1'; // sky-700, single-series
+const COLOR_BAR = '#56B845'; // brand green (Pertinence), single-series
 
 export function SpendByCategory({
   rows,

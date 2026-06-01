@@ -10,7 +10,7 @@ import type { RevenueByLocationRow } from '../../lib/queries/sales';
 
 const TOP_N = 8;
 const COLOR_Q1 = '#94A3B8'; // slate-400
-const COLOR_Q2 = '#0369A1'; // sky-700  (accent)
+const COLOR_Q2 = '#56B845'; // brand green (Pertinence) — accent
 
 type QuarterRow = {
   locationName: string;

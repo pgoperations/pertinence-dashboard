@@ -8,8 +8,8 @@ import type { RevenueByLocationRow } from '../../lib/queries/sales';
 
 const TOP_N = 8;
 
-const COLOR_PAYABLE = '#94A3B8';
-const COLOR_RECEIVED = '#0369A1';
+const COLOR_PAYABLE = '#94A3B8';      // slate-400 — payable (commitment)
+const COLOR_RECEIVED = '#56B845';     // brand green (Pertinence) — received (cash in)
 
 export function RevenueByLocation({
   rows,

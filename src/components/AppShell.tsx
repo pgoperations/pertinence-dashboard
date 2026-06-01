@@ -49,12 +49,13 @@ export function AppShell() {
       <header className="sticky top-0 z-30 border-b border-brand-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 md:gap-4 md:px-6">
           <div className="flex items-center gap-2.5 md:gap-3">
-            <div
-              className="grid h-9 w-9 place-items-center rounded-lg bg-brand-900 text-white font-heading text-sm font-semibold"
-              aria-hidden
-            >
-              PG
-            </div>
+            <img
+              src="/logo.jpeg"
+              alt="Pertinence Group"
+              className="h-10 w-10 shrink-0 object-contain"
+              width={40}
+              height={40}
+            />
             <div className="hidden flex-col leading-tight sm:flex">
               <span className="font-heading text-sm font-semibold text-brand-900">
                 Pertinence Dashboard
@@ -96,7 +97,7 @@ export function AppShell() {
                   clsx(
                     'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors duration-200 cursor-pointer',
                     isActive
-                      ? 'bg-brand-900 text-white shadow-card'
+                      ? 'bg-accent text-white shadow-card'
                       : 'text-brand-700 hover:bg-white hover:text-brand-900',
                   )
                 }
@@ -115,7 +116,7 @@ export function AppShell() {
               className="group flex w-full items-center gap-3 rounded-lg border border-brand-200 bg-white px-2.5 py-2 text-left transition-colors duration-200 hover:border-brand-300 hover:bg-brand-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-1"
             >
               <span
-                className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-900 text-xs font-semibold text-white"
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-accent text-xs font-semibold text-white"
                 aria-hidden
               >
                 {initials || '?'}
@@ -149,7 +150,7 @@ export function AppShell() {
               className={({ isActive }) =>
                 clsx(
                   'flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors duration-200 cursor-pointer',
-                  isActive ? 'text-brand-900' : 'text-brand-500',
+                  isActive ? 'text-accent' : 'text-brand-500',
                 )
               }
             >

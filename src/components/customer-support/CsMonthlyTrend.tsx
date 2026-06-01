@@ -14,7 +14,7 @@ import { DrillPanel } from '../sales/DrillPanel';
 import { formatNumber, formatMonthShort, formatMonthYear } from '../../lib/format';
 import type { CsMonthBucket } from '../../lib/queries/customerSupport';
 
-const COLOR_ENQ = '#0369A1';      // sky-700 — enquiries
+const COLOR_ENQ = '#56B845';      // brand green (Pertinence) — enquiries
 const COLOR_COMP = '#334155';     // slate-700 — complaints unresolved
 const COLOR_RESOLVED = '#059669'; // emerald-600 — resolved (distinct hue → reads as positive outcome)
 const COLOR_GRID = '#E2E8F0';
@@ -39,7 +39,7 @@ export function CsMonthlyTrend({
   return (
     <PanelCard
       title="Monthly trend"
-      subtitle="Enquiries (sky) vs Complaints (slate) per month, with resolved overlay. Tap a bar or month chip for that month's breakdown."
+      subtitle="Enquiries (green) vs Complaints (slate) per month, with resolved overlay. Tap a bar or month chip for that month's breakdown."
       source="Source: customer_support_logs. Enquiries = no complaint_category_id. Complaints = with category. Resolved is the strict-resolved subset of complaints."
     >
       {empty ? (
@@ -75,7 +75,7 @@ export function CsMonthlyTrend({
                 />
                 <Tooltip
                   content={<TrendTooltip />}
-                  cursor={{ fill: 'rgba(2,132,199,0.05)' }}
+                  cursor={{ fill: 'rgba(86,184,69,0.07)' }}
                 />
                 <Bar
                   dataKey="enquiries"
@@ -171,7 +171,7 @@ function MonthDrill({ row }: { row: CsMonthBucket }) {
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <div>
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-sky-800">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-accent-emphasis">
             By channel
           </div>
           <BreakdownList items={channels} emptyMessage="No channel-tagged logs this month." />
@@ -206,7 +206,7 @@ function MonthTick({ x = 0, y = 0, payload, selected }: TickProps) {
         y={0}
         dy={14}
         textAnchor="middle"
-        fill={isSelected ? '#0369A1' : '#475569'}
+        fill={isSelected ? '#56B845' : '#475569'}
         fontSize={11}
         fontWeight={isSelected ? 700 : 500}
       >

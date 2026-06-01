@@ -18,7 +18,7 @@ import { useDateRange } from '../../hooks/useDateRange';
 import { useRefresh } from '../../hooks/useRefresh';
 
 const TOP_N = 8;
-const COLOR_BAR = '#0369A1'; // sky-700, matches the rest of the dashboard
+const COLOR_BAR = '#56B845'; // brand green (Pertinence), matches the rest of the dashboard
 
 export function DigitalMarketingPanel() {
   const { range } = useDateRange();
