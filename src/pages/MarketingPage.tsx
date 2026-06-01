@@ -4,6 +4,7 @@ import { StatusBanner } from '../components/StatusBanner';
 import { MarketingKpiStrip } from '../components/marketing/MarketingKpiStrip';
 import { SpendByCategory } from '../components/marketing/SpendByCategory';
 import { MonthlySpendChart } from '../components/marketing/MonthlySpendChart';
+import { DigitalMarketingPanel } from '../components/digital-marketing/DigitalMarketingPanel';
 import { GreyedCard } from '../components/sales/GreyedCard';
 import { useDateRange } from '../hooks/useDateRange';
 import { useRefresh } from '../hooks/useRefresh';
@@ -88,6 +89,8 @@ export default function MarketingPage() {
         />
 
         <MonthlySpendChart monthly={monthly} loading={loading} />
+
+        <DigitalMarketingPanel />
 
         <div className="grid gap-4 md:grid-cols-3 md:gap-5">
           <GreyedCard
