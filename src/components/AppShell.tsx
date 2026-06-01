@@ -12,6 +12,7 @@ import {
   IconRefresh,
 } from './icons';
 import { DateRangePicker } from './DateRangePicker';
+import { RepullButton } from './RepullButton';
 import type { ComponentType, SVGProps } from 'react';
 
 type NavItem = {
@@ -62,12 +63,14 @@ export function AppShell() {
           <div className="ml-auto flex items-center gap-2 md:gap-3">
             <DateRangePicker />
 
+            <RepullButton />
+
             <button
               type="button"
               onClick={refresh}
               disabled={refreshing}
               aria-label="Refresh data"
-              title="Refresh data"
+              title="Re-query Supabase tables (fast). Use Sync Sheets to pull from Google."
               className={clsx(
                 'group inline-flex h-10 items-center gap-2 rounded-lg border border-brand-200 bg-white px-2.5 text-sm font-medium text-brand-700 transition-colors duration-200 cursor-pointer md:px-3',
                 'hover:border-accent hover:bg-accent/5 hover:text-accent',
