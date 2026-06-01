@@ -318,6 +318,13 @@ function CampaignRowItem({
   );
 }
 
+// Metric keys whose stored `total` is a numeric sum of per-week rates — which
+// is mathematically meaningless across weeks (you can't sum CPL rates). The
+// drill replaces these with values derived from the cost + leads / cost +
+// reach denominators that ARE additive. The supervisor's per-week CPL cell
+// is still preserved in the underlying raw_row for traceback.
+const RATE_METRIC_KEYS = new Set(['cost_per_lead', 'cost_per_result_combined']);
+
 function CampaignDrill({
   row,
   metricCanonicals,
@@ -326,12 +333,22 @@ function CampaignDrill({
   metricCanonicals: DmMetricCanonical[];
 }) {
   const entries = metricCanonicals
-    .map((m) => ({
-      key: m.key,
-      display: m.displayName,
-      unit: m.unit,
-      value: row.perMetric[m.key] ?? 0,
-    }))
+    .map((m) => {
+      // Replace stored sum with derived value for rate-style metrics.
+      // CPL = total cost / total leads. Cost per result combined falls back
+      // to CPL when no separate "results" total exists in v1.
+      let value = row.perMetric[m.key] ?? 0;
+      let derived = false;
+      if (RATE_METRIC_KEYS.has(m.key)) {
+        if (row.leads > 0) {
+          value = row.spend / row.leads;
+          derived = true;
+        } else {
+          value = 0;
+        }
+      }
+      return { key: m.key, display: m.displayName, unit: m.unit, value, derived };
+    })
     .filter((e) => e.value !== 0);
   return (
     <div className="space-y-3">
@@ -341,7 +358,14 @@ function CampaignDrill({
             key={e.key}
             className="flex items-baseline justify-between gap-3 text-xs"
           >
-            <span className="min-w-0 truncate text-slate-700">{e.display}</span>
+            <span className="min-w-0 truncate text-slate-700">
+              {e.display}
+              {e.derived && (
+                <span className="ml-1 text-[10px] uppercase tracking-wide text-slate-400">
+                  derived
+                </span>
+              )}
+            </span>
             <span className="shrink-0 font-semibold tabular-nums text-slate-900">
               {e.unit === 'naira' ? formatNairaCompact(e.value) : formatNumber(e.value)}
             </span>
@@ -350,11 +374,13 @@ function CampaignDrill({
       </ul>
       {row.effectiveCpl !== null && row.leads > 0 && (
         <p className="text-[11px] text-slate-500">
-          Effective CPL across the range:{' '}
+          Cost per lead = total cost ÷ total leads ={' '}
           <span className="font-semibold tabular-nums text-slate-900">
-            {formatNairaCompact(row.effectiveCpl)} / lead
+            {formatNairaCompact(row.effectiveCpl)}
           </span>{' '}
-          ({formatNumber(row.leads)} lead{row.leads === 1 ? '' : 's'}).
+          across {formatNumber(row.leads)} lead{row.leads === 1 ? '' : 's'}. Per-week
+          CPL cells from the source are preserved in <code>raw_row</code> for
+          traceback but summing rate metrics across weeks isn't meaningful.
         </p>
       )}
     </div>
