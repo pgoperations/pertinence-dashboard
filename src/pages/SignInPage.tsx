@@ -33,7 +33,7 @@ export default function SignInPage() {
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center text-center">
           <img
-            src="/logo.jpeg"
+            src="/logo.png"
             alt="Pertinence Group"
             className="h-16 w-16 object-contain"
             width={64}

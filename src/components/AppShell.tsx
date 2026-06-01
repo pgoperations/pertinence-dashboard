@@ -50,7 +50,7 @@ export function AppShell() {
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 md:gap-4 md:px-6">
           <div className="flex items-center gap-2.5 md:gap-3">
             <img
-              src="/logo.jpeg"
+              src="/logo.png"
               alt="Pertinence Group"
               className="h-10 w-10 shrink-0 object-contain"
               width={40}
