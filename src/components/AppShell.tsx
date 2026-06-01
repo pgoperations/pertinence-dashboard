@@ -30,13 +30,19 @@ const NAV: NavItem[] = [
 
 export function AppShell() {
   const { profile, signOut } = useAuth();
-  const initials = (profile?.full_name ?? profile?.email ?? '?')
-    .split(/[\s@]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((s) => s[0]?.toUpperCase())
-    .join('');
-  const displayName = profile?.full_name ?? profile?.email ?? 'Signed in';
+  // Prefer full_name → email local-part → 'U' (for "User"). Avoids the bare
+  // '?' the avatar used to show when profile had no full_name and the email
+  // tokenizer produced no letters.
+  const emailLocal = profile?.email ? profile.email.split('@')[0] : '';
+  const initialsSource = profile?.full_name?.trim() || emailLocal;
+  const initials =
+    initialsSource
+      .split(/[\s._-]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((s) => s[0]?.toUpperCase() ?? '')
+      .join('') || 'U';
+  const displayName = profile?.full_name?.trim() || emailLocal || 'Signed in';
 
   return (
     <div className="min-h-screen bg-brand-50 text-brand-900">

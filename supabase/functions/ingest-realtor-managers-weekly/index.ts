@@ -31,6 +31,7 @@ import {
   parseRealtorMetricsTab,
   type ParsedMetricRow,
 } from '../_shared/parseRealtorMetricsTab.ts';
+import { handlePreflight, jsonResponse } from '../_shared/cors.ts';
 
 const SOURCE_SHEET = 'marketing_team_reporting_template';
 
@@ -57,7 +58,9 @@ type TabResult = {
   unknownLabels: Array<{ label: string; count: number }>;
 };
 
-Deno.serve(async (_req) => {
+Deno.serve(async (req) => {
+  const preflight = handlePreflight(req);
+  if (preflight) return preflight;
   const startedAt = new Date().toISOString();
   try {
     const supabase = createClient(
@@ -132,24 +135,18 @@ Deno.serve(async (_req) => {
       }
     }
 
-    return new Response(
-      JSON.stringify({
-        ok: true,
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        source: { sheet: SOURCE_SHEET },
-        tabs: tabResults,
-        rowsUpserted: upserted,
-        flagCounts,
-      }, null, 2),
-      { headers: { 'Content-Type': 'application/json' } },
-    );
+    return jsonResponse({
+      ok: true,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      source: { sheet: SOURCE_SHEET },
+      tabs: tabResults,
+      rowsUpserted: upserted,
+      flagCounts,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('ingest-realtor-managers-weekly failed:', message);
-    return new Response(
-      JSON.stringify({ ok: false, startedAt, error: message }, null, 2),
-      { status: 500, headers: { 'Content-Type': 'application/json' } },
-    );
+    return jsonResponse({ ok: false, startedAt, error: message }, 500);
   }
 });

@@ -35,3 +35,17 @@ export function formatAsOf(iso: string | null | undefined): string {
   if (!iso) return '—';
   return format(new Date(iso), "d MMM yyyy 'at' HH:mm");
 }
+
+// Source data mixes case: "OJEWUMI VICTOR" / "Ojewumi Victor" / "STAFF" / "SMR".
+// Multi-token names → Title Case so the display is consistent across cards.
+// Single-token sentinels / acronyms (STAFF, SMR, ASSETPLUS) stay as-typed —
+// they read as labels, not personal names.
+export function formatPersonName(raw: string | null | undefined): string {
+  if (!raw) return '';
+  if (!/\s/.test(raw)) return raw;
+  return raw
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => (w.length === 0 ? w : w[0].toUpperCase() + w.slice(1)))
+    .join(' ');
+}

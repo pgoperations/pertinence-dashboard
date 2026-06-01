@@ -262,8 +262,15 @@ export async function loadSalesPanelData(
   // Bank-deposit derived: deal counts per location + realtor leaderboard + every-txn list.
   const dealCountByLoc = new Map<string, number>();
   let dealCountNullLoc = 0;
-  const revenueBySalesPerson = new Map<string, number>();
-  const dealCountBySalesPerson = new Map<string, number>();
+  // Top Realtors merges variants that are the same person typed differently —
+  // "Ojewumi Victor" vs "Victor Ojewumi" (word-order swap), "VICTOR OJEWUMI"
+  // vs "Victor Ojewumi" (case), "Capt. Aimhiora" vs "Capt Aimhiora" (punctuation).
+  // We bucket by `nameFingerprint()` (sorted token set, punctuation-stripped,
+  // lower-cased) so all those collapse to one row. Within each bucket we
+  // remember the raw variants so we can pick the most-typed one as display.
+  const revenueByFingerprint = new Map<string, number>();
+  const dealCountByFingerprint = new Map<string, number>();
+  const variantCountsByFingerprint = new Map<string, Map<string, number>>();
   const allTxns: TopDealEntry[] = [];
   const addMonthPurpose = (
     map: Map<string, Map<string, number>>,
@@ -322,8 +329,15 @@ export async function loadSalesPanelData(
 
     // Realtor leaderboard. Null sales_person → "Unattributed" bucket (per project brief).
     const sp = row.sales_person?.trim() || 'Unattributed';
-    revenueBySalesPerson.set(sp, (revenueBySalesPerson.get(sp) ?? 0) + amount);
-    dealCountBySalesPerson.set(sp, (dealCountBySalesPerson.get(sp) ?? 0) + 1);
+    const fp = sp === 'Unattributed' ? 'Unattributed' : nameFingerprint(sp);
+    revenueByFingerprint.set(fp, (revenueByFingerprint.get(fp) ?? 0) + amount);
+    dealCountByFingerprint.set(fp, (dealCountByFingerprint.get(fp) ?? 0) + 1);
+    let variants = variantCountsByFingerprint.get(fp);
+    if (!variants) {
+      variants = new Map<string, number>();
+      variantCountsByFingerprint.set(fp, variants);
+    }
+    variants.set(sp, (variants.get(sp) ?? 0) + 1);
 
     // Every transaction → seeds top-deals + weekly browser. Skip zero-amount fees row noise.
     if (amount > 0) {
@@ -549,11 +563,15 @@ export async function loadSalesPanelData(
   };
 
   // --- Top realtors -------------------------------------------------------
-  const topRealtors: TopRealtorEntry[] = [...revenueBySalesPerson.entries()]
-    .map(([salesPerson, revenue]) => ({
-      salesPerson,
+  // For each fingerprint bucket, pick the most-frequently-typed raw variant
+  // as the display name (ties broken alphabetically for determinism). The
+  // SALES PERSON cell wins by typing volume, which matches the supervisor's
+  // mental model — the spelling used most often is the "real" name.
+  const topRealtors: TopRealtorEntry[] = [...revenueByFingerprint.entries()]
+    .map(([fp, revenue]) => ({
+      salesPerson: pickDisplayName(variantCountsByFingerprint.get(fp)),
       revenue,
-      dealCount: dealCountBySalesPerson.get(salesPerson) ?? 0,
+      dealCount: dealCountByFingerprint.get(fp) ?? 0,
     }))
     .filter((e) => e.revenue > 0)
     .sort((a, b) => b.revenue - a.revenue);
@@ -623,6 +641,43 @@ function iso(dt: Date): string {
   const m = String(dt.getUTCMonth() + 1).padStart(2, '0');
   const d = String(dt.getUTCDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+}
+
+// Token-set fingerprint: lower-case, drop punctuation, dedupe, sort, join.
+// Same person typed two different ways collapses to the same fingerprint:
+//   "Ojewumi Victor" → "ojewumi victor"
+//   "Victor Ojewumi" → "ojewumi victor"
+//   "VICTOR OJEWUMI" → "ojewumi victor"
+//   "Capt. Aimhiora" / "Capt Aimhiora" → "aimhiora capt"
+// Single-token names ("STAFF", "SMR") have a single-token fingerprint and only
+// merge with case variants of themselves.
+export function nameFingerprint(raw: string): string {
+  return [
+    ...new Set(
+      raw
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+        .split(/\s+/)
+        .filter(Boolean),
+    ),
+  ]
+    .sort()
+    .join(' ');
+}
+
+// Picks the variant typed most often as the canonical display. Ties broken
+// alphabetically so re-runs are deterministic.
+function pickDisplayName(variants: Map<string, number> | undefined): string {
+  if (!variants || variants.size === 0) return 'Unattributed';
+  let best = '';
+  let bestCount = -1;
+  for (const [raw, count] of variants.entries()) {
+    if (count > bestCount || (count === bestCount && raw < best)) {
+      best = raw;
+      bestCount = count;
+    }
+  }
+  return best;
 }
 
 function sortedBreakdown(map: Map<string, number>): PurposeBreakdownEntry[] {

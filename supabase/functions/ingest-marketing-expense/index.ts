@@ -72,6 +72,7 @@ import {
 } from '../_shared/parseMarketingTab.ts';
 import { keywordMatchCategory } from '../_shared/categoryFallback.ts';
 import { QUALITY_FLAGS, type QualityFlags } from '../_shared/quality_flags.ts';
+import { handlePreflight, jsonResponse } from '../_shared/cors.ts';
 
 const SOURCE_SHEET = 'marketing_fund_expense';
 // 200 rows is well above the ~25 expenditure rows/month seen on Apr/May 2026.
@@ -261,7 +262,9 @@ function parseTab(
   return { parsed, stats };
 }
 
-Deno.serve(async (_req) => {
+Deno.serve(async (req) => {
+  const preflight = handlePreflight(req);
+  if (preflight) return preflight;
   const startedAt = new Date().toISOString();
   try {
     const supabase = createClient(
@@ -321,28 +324,22 @@ Deno.serve(async (_req) => {
       }
     }
 
-    return new Response(
-      JSON.stringify({
-        ok: true,
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        source: { sheet: SOURCE_SHEET },
-        tabsDiscovered: tabs.length,
-        tabsIngested: tabsToIngest.length,
-        tabsIngestedNames: tabsToIngest.map((t) => t.tab.title),
-        tabStats,
-        rowsUpserted: upserted,
-        flagCounts,
-        aggregateRowsInserted: refreshResult,
-      }, null, 2),
-      { headers: { 'Content-Type': 'application/json' } },
-    );
+    return jsonResponse({
+      ok: true,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      source: { sheet: SOURCE_SHEET },
+      tabsDiscovered: tabs.length,
+      tabsIngested: tabsToIngest.length,
+      tabsIngestedNames: tabsToIngest.map((t) => t.tab.title),
+      tabStats,
+      rowsUpserted: upserted,
+      flagCounts,
+      aggregateRowsInserted: refreshResult,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('ingest-marketing-expense failed:', message);
-    return new Response(
-      JSON.stringify({ ok: false, startedAt, error: message }, null, 2),
-      { status: 500, headers: { 'Content-Type': 'application/json' } },
-    );
+    return jsonResponse({ ok: false, startedAt, error: message }, 500);
   }
 });

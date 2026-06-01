@@ -40,6 +40,37 @@ const INITIAL_RESULTS: Record<IngestFn, IngestResult> = Object.fromEntries(
   INGESTS.map((i) => [i.fn, { status: 'idle', ms: null, rowsUpserted: null, message: null }]),
 ) as Record<IngestFn, IngestResult>;
 
+// Per-invoke safety net. Each ingest's typical wall-time is <15s (Customer
+// Support is the longest); 60s is a generous ceiling that still guarantees
+// the UI never sits on "running…" forever if an Edge Function or the network
+// stalls. Without this, a hung invoke kept the spinner spinning indefinitely
+// — observed when the functions were missing CORS preflight handlers, but the
+// failure mode could recur with any other network-level hang.
+const INVOKE_TIMEOUT_MS = 60_000;
+
+function invokeWithTimeout(fn: string, ms: number) {
+  return new Promise<{ data: unknown; error: { message: string } | null }>(
+    (resolve) => {
+      const timer = setTimeout(() => {
+        resolve({ data: null, error: { message: `Timed out after ${ms / 1000}s` } });
+      }, ms);
+      supabase.functions
+        .invoke(fn, { body: {} })
+        .then((res) => {
+          clearTimeout(timer);
+          resolve(res as { data: unknown; error: { message: string } | null });
+        })
+        .catch((err: unknown) => {
+          clearTimeout(timer);
+          resolve({
+            data: null,
+            error: { message: err instanceof Error ? err.message : String(err) },
+          });
+        });
+    },
+  );
+}
+
 function extractRowsUpserted(payload: unknown): number | null {
   if (!payload || typeof payload !== 'object') return null;
   const obj = payload as Record<string, unknown>;
@@ -108,7 +139,7 @@ export function RepullButton() {
       INGESTS.map(async (ingest) => {
         const start = performance.now();
         try {
-          const { data, error } = await supabase.functions.invoke(ingest.fn, { body: {} });
+          const { data, error } = await invokeWithTimeout(ingest.fn, INVOKE_TIMEOUT_MS);
           const ms = Math.round(performance.now() - start);
           if (error) {
             next[ingest.fn] = {

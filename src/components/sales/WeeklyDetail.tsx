@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { PanelCard } from '../PanelCard';
 import { IconChevronDown } from '../icons';
-import { formatNaira, formatNairaCompact, formatNumber } from '../../lib/format';
+import { formatNaira, formatNairaCompact, formatNumber, formatPersonName } from '../../lib/format';
 import type { WeekBucket } from '../../lib/queries/sales';
 import { format, parseISO } from 'date-fns';
 
@@ -120,7 +120,7 @@ export function WeeklyDetail({
                           </Td>
                           <Td>{e.locationName ?? <span className="italic text-slate-400">—</span>}</Td>
                           <Td>{e.purposeName ?? <span className="italic text-slate-400">—</span>}</Td>
-                          <Td>{e.salesPerson ?? <span className="italic text-slate-400">—</span>}</Td>
+                          <Td>{e.salesPerson ? formatPersonName(e.salesPerson) : <span className="italic text-slate-400">—</span>}</Td>
                           <Td align="right" emphasis>
                             {formatNaira(e.amount)}
                           </Td>

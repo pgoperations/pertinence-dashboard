@@ -1,5 +1,5 @@
 import { PanelCard } from '../PanelCard';
-import { formatNairaCompact } from '../../lib/format';
+import { formatNairaCompact, formatPersonName } from '../../lib/format';
 import type { TopDealEntry } from '../../lib/queries/sales';
 import { format, parseISO } from 'date-fns';
 
@@ -59,7 +59,7 @@ export function TopDeals({
                       {d.salesPerson && (
                         <>
                           <span aria-hidden>·</span>
-                          <span>{d.salesPerson}</span>
+                          <span>{formatPersonName(d.salesPerson)}</span>
                         </>
                       )}
                     </div>

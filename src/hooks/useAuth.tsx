@@ -50,6 +50,20 @@ async function loadProfile(userId: string): Promise<Profile | null> {
   return data as Profile | null;
 }
 
+// Derive a minimal Profile from the session itself so the UI can render
+// (avatar initial, header email) even when the `profiles` row hasn't loaded.
+// Used as a fallback when loadProfile times out / errors — without this, a
+// fresh sign-in stalls on the sign-in page until the user refreshes (which
+// re-hydrates from sessionStorage and the second loadProfile usually succeeds).
+function fallbackProfileFromSession(session: Session): Profile {
+  return {
+    id: session.user.id,
+    email: session.user.email ?? '',
+    full_name: (session.user.user_metadata?.full_name as string | undefined) ?? null,
+    role: 'viewer',
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -57,6 +71,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+
+    // Race loadProfile against a short timeout. The PostgREST call can stall on
+    // a freshly-issued session (sessionStorage write + supabase-js lock interplay
+    // observed during the first sign-in event of a tab). Falling back to a
+    // session-derived profile keeps the user moving — the real profile fills in
+    // on the next successful query, or on the next sign-in.
+    async function resolveProfile(session: Session): Promise<Profile> {
+      try {
+        const p = await withTimeout(loadProfile(session.user.id), 4000);
+        return p ?? fallbackProfileFromSession(session);
+      } catch (err) {
+        console.warn('[auth] loadProfile timed out or failed — using session fallback', err);
+        return fallbackProfileFromSession(session);
+      }
+    }
 
     // If getSession() hangs (corporate proxy blocking *.supabase.co, stale refresh
     // token that the SDK retries forever, etc.) we still need the app to bail to
@@ -67,7 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!mounted) return;
         setSession(data.session);
         if (data.session?.user) {
-          const p = await loadProfile(data.session.user.id);
+          const p = await resolveProfile(data.session);
           if (!mounted) return;
           setProfile(p);
           setStatus('signed-in');
@@ -87,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!mounted) return;
       setSession(newSession);
       if (newSession?.user) {
-        const p = await loadProfile(newSession.user.id);
+        const p = await resolveProfile(newSession);
         if (!mounted) return;
         setProfile(p);
         setStatus('signed-in');

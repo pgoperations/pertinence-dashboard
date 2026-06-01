@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { PanelCard } from '../PanelCard';
-import { formatNairaCompact, formatNumber } from '../../lib/format';
+import { formatNairaCompact, formatNumber, formatPersonName } from '../../lib/format';
 import type { TopRealtorEntry } from '../../lib/queries/sales';
 
 const DEFAULT_TOP = 5;
@@ -43,7 +43,7 @@ export function TopRealtors({
                         {i + 1}
                       </span>
                       <span className="truncate font-medium text-slate-900">
-                        {prettyName(r.salesPerson)}
+                        {formatPersonName(r.salesPerson)}
                       </span>
                       <span className="shrink-0 text-[11px] font-normal text-slate-500 tabular-nums">
                         · {formatNumber(r.dealCount)} {r.dealCount === 1 ? 'deal' : 'deals'}
@@ -79,14 +79,3 @@ export function TopRealtors({
   );
 }
 
-// Source data mixes case: "OJEWUMI VICTOR" / "Ojewumi Victor" / "STAFF" / "SMR".
-// Person names (have a space) → Title Case. Single-token sentinels / acronyms
-// (STAFF, SMR, ASSETPLUS) stay as-typed — supervisor reads them as labels.
-function prettyName(raw: string): string {
-  if (!/\s/.test(raw)) return raw;
-  return raw
-    .toLowerCase()
-    .split(/\s+/)
-    .map((w) => (w.length === 0 ? w : w[0].toUpperCase() + w.slice(1)))
-    .join(' ');
-}

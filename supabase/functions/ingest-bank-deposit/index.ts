@@ -47,6 +47,7 @@ import {
   lookupCanonical,
 } from '../_shared/canonicalLookup.ts';
 import { QUALITY_FLAGS, type QualityFlags } from '../_shared/quality_flags.ts';
+import { handlePreflight, jsonResponse } from '../_shared/cors.ts';
 
 const SOURCE_SHEET = 'bank_deposit_mirror';
 const SOURCE_TAB = '2026 LAND';
@@ -184,6 +185,9 @@ function parseRow(
 }
 
 Deno.serve(async (req) => {
+  const preflight = handlePreflight(req);
+  if (preflight) return preflight;
+
   const startedAt = new Date().toISOString();
   try {
     const supabase = createClient(
@@ -313,30 +317,24 @@ Deno.serve(async (req) => {
       }
     }
 
-    return new Response(
-      JSON.stringify({
-        ok: true,
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        source: { sheet: SOURCE_SHEET, tab: SOURCE_TAB, range: READ_RANGE },
-        rowsRead: rawRows.length,
-        rowsUpserted: upserted,
-        blankSkipped,
-        fallbackRowIdCount,
-        forwardFilledDateCount,
-        dateFallbackCount,
-        duplicateTransCodes,
-        flagCounts,
-        aggregateRowsInserted: refreshResult,
-      }, null, 2),
-      { headers: { 'Content-Type': 'application/json' } },
-    );
+    return jsonResponse({
+      ok: true,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      source: { sheet: SOURCE_SHEET, tab: SOURCE_TAB, range: READ_RANGE },
+      rowsRead: rawRows.length,
+      rowsUpserted: upserted,
+      blankSkipped,
+      fallbackRowIdCount,
+      forwardFilledDateCount,
+      dateFallbackCount,
+      duplicateTransCodes,
+      flagCounts,
+      aggregateRowsInserted: refreshResult,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('ingest-bank-deposit failed:', message);
-    return new Response(
-      JSON.stringify({ ok: false, startedAt, error: message }, null, 2),
-      { status: 500, headers: { 'Content-Type': 'application/json' } },
-    );
+    return jsonResponse({ ok: false, startedAt, error: message }, 500);
   }
 });
