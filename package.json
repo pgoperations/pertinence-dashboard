@@ -11,7 +11,8 @@
     "smoke:sheets": "node --env-file=.env.local scripts/smoke-test-sheets.mjs",
     "dump:canonicals": "node --env-file=.env.local scripts/dump-bank-deposit-canonicals.mjs",
     "dump:cs-canonicals": "node --env-file=.env.local scripts/dump-customer-support-canonicals.mjs",
-    "verify:marketing": "node --env-file=.env.local scripts/verify-marketing-ingest.mjs"
+    "verify:marketing": "node --env-file=.env.local scripts/verify-marketing-ingest.mjs",
+    "ingest:all": "node --env-file=.env.local scripts/run-all-ingests.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.3",

@@ -64,6 +64,7 @@ pnpm smoke:sheets            # verify service-account can read a sheet
 pnpm dump:canonicals         # extract unique PURPOSE/LOCATION from Bank Deposit 2026 LAND
 pnpm dump:cs-canonicals      # extract unique complaint values from Customer Support tabs
 pnpm verify:marketing        # read marketing_monthly + marketing_expenses, print by category
+pnpm ingest:all              # manually re-pull all 6 ingests in parallel — until step 9 automates this
 ```
 
 Supabase CLI commands (run from project root):
