@@ -56,16 +56,24 @@ const PLATFORM_LABELS: Record<string, MediaPlatform> = {
   'youtube': 'youtube',
 };
 
-const SKIP_LABELS = new Set<string>([
+// Labels that end the current week-block walk (we've stepped into the
+// monthly summary / monetization report below the weekly grid — the
+// supervisor explicitly scoped v1 to weekly data only).
+const STOP_LABELS = new Set<string>([
   'january summary', 'february summary', 'march summary', 'april summary',
   'may summary', 'june summary', 'july summary', 'august summary',
   'september summary', 'october summary', 'november summary', 'december summary',
   'youtube monetization report',
+  'summary of social media activity',
+]);
+
+// Labels that we silently skip but DO NOT end the walk (mid-block headers
+// or decorative rows).
+const SKIP_LABELS = new Set<string>([
   'top performing videos',
   'blocker/challenge',
   'blocker / challenge',
   'total no of subscribers',
-  'summary of social media activity',
   'most performing',
   'report',
 ]);
@@ -169,6 +177,25 @@ type MonthAnchor = {
   weeks: Array<{ week: number; startCol: number }>;  // platform-label / metric-label col per week
 };
 
+function collectWeeksInRow(
+  rows: unknown[][],
+  rowIndex: number,
+): Array<{ week: number; startCol: number }> {
+  const row = rows[rowIndex] ?? [];
+  const weeks: Array<{ week: number; startCol: number }> = [];
+  for (let c = 0; c < row.length; c++) {
+    const cell = row[c];
+    if (typeof cell !== 'string') continue;
+    const text = cell.trim();
+    if (!text) continue;
+    const weekMatch = text.match(WEEK_LABEL_RE);
+    if (weekMatch) {
+      weeks.push({ week: Number(weekMatch[1]), startCol: c });
+    }
+  }
+  return weeks;
+}
+
 function findMonthAnchors(
   rows: unknown[][],
   startRow: number,
@@ -178,7 +205,6 @@ function findMonthAnchors(
   for (let r = startRow; r < Math.min(rows.length, endRow); r++) {
     const row = rows[r] ?? [];
     let month: number | null = null;
-    const weeks: Array<{ week: number; startCol: number }> = [];
     for (let c = 0; c < row.length; c++) {
       const cell = row[c];
       if (typeof cell !== 'string') continue;
@@ -187,14 +213,30 @@ function findMonthAnchors(
       const monthCandidate = MONTHS[text.toUpperCase()];
       if (monthCandidate) {
         month = monthCandidate;
-        continue;
-      }
-      const weekMatch = text.match(WEEK_LABEL_RE);
-      if (weekMatch) {
-        weeks.push({ week: Number(weekMatch[1]), startCol: c });
+        break;
       }
     }
-    if (month !== null && weeks.length > 0) {
+    if (month === null) continue;
+
+    // Collect WEEK headers from THIS row plus the next row down. The
+    // supervisor's layout often puts WEEK 1–3 in the month-label row but
+    // WEEK 4 in the row immediately below (where the platform/brand header
+    // also lives). Dedupe by week number; first sighting wins.
+    const seenWeeks = new Set<number>();
+    const weeks: Array<{ week: number; startCol: number }> = [];
+    for (const w of collectWeeksInRow(rows, r)) {
+      if (!seenWeeks.has(w.week)) {
+        seenWeeks.add(w.week);
+        weeks.push(w);
+      }
+    }
+    for (const w of collectWeeksInRow(rows, r + 1)) {
+      if (!seenWeeks.has(w.week)) {
+        seenWeeks.add(w.week);
+        weeks.push(w);
+      }
+    }
+    if (weeks.length > 0) {
       anchors.push({ monthRow: r, month, weeks });
     }
   }
@@ -226,34 +268,57 @@ function parseWeekBlock(
     const labelNorm = normalizeLabel(rawLabel);
     if (!labelNorm) continue;
 
+    // Stop labels: bail out of the week-block walk entirely. The summary /
+    // monetization report sits below the weekly grid and the supervisor
+    // explicitly scoped v1 to weekly data only.
+    if (STOP_LABELS.has(labelNorm)) break;
+
     // Platform header row.
     const platformCandidate = PLATFORM_LABELS[labelNorm];
     if (platformCandidate) {
       currentPlatform = platformCandidate;
       stats.platformSectionsFound++;
-      brandsForCurrentPlatform = [];
+      // Read brand cols from the same row. If ALL brand cols are blank, the
+      // supervisor's layout shares the brand row with the FIRST platform
+      // section of the week — inherit the previously resolved mapping
+      // rather than blanking everything out.
+      const readBrands: Array<{ id: string; key: string } | null> = [];
+      let anyBrandFound = false;
       for (let i = 0; i < 8; i++) {
         const brandCell = row[startCol + 1 + i];
         const brandLabel = trimOrNull(brandCell);
         if (!brandLabel) {
-          brandsForCurrentPlatform.push(null);
+          readBrands.push(null);
           continue;
         }
+        anyBrandFound = true;
         const match = lookups.brandByAlias.get(brandLabel.toLowerCase());
         if (match) {
-          brandsForCurrentPlatform.push({ id: match.id, key: match.key });
+          readBrands.push({ id: match.id, key: match.key });
         } else {
-          brandsForCurrentPlatform.push(null);
+          readBrands.push(null);
           stats.unknownBrands.set(
             brandLabel,
             (stats.unknownBrands.get(brandLabel) ?? 0) + 1,
           );
         }
       }
+      if (anyBrandFound) {
+        brandsForCurrentPlatform = readBrands;
+      }
+      // else: keep existing brandsForCurrentPlatform (inherited from prior
+      // platform section in the same week block).
       continue;
     }
 
     if (SKIP_LABELS.has(labelNorm)) {
+      stats.rowsSkipped++;
+      continue;
+    }
+
+    // Stray WEEK N labels (Week 4 sits one row below its month label, so the
+    // first row of its block walk lands on the WEEK 4 label cell itself).
+    if (WEEK_LABEL_RE.test(labelNorm)) {
       stats.rowsSkipped++;
       continue;
     }
