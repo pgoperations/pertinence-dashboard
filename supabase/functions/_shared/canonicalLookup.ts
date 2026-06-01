@@ -96,6 +96,76 @@ export async function loadRealtorMetricAliases(
 }
 
 
+// Digital Marketing metric aliases: source-label text → canonical metric_key.
+// Same pattern as realtor_metric_aliases.
+export async function loadDigitalMarketingMetricAliases(
+  supabase: SupabaseClient,
+): Promise<Map<string, string>> {
+  const { data, error } = await supabase
+    .from('digital_marketing_metric_aliases')
+    .select('alias, metric_key');
+  if (error) throw new Error(`digital_marketing_metric_aliases load failed: ${error.message}`);
+  const map = new Map<string, string>();
+  for (const row of data ?? []) {
+    if (row.alias && row.metric_key) {
+      map.set(String(row.alias).toLowerCase().trim(), row.metric_key as string);
+    }
+  }
+  return map;
+}
+
+
+// Media Weekly lookups: brand aliases, metric aliases, and the set of valid
+// canonical metric keys. The parser uses the keySet to verify platform-prefix
+// substitutions (fb_ → ig_ / yt_) when resolving ambiguous metric labels.
+export type MediaLookups = {
+  brandByAlias: Map<string, { id: string; key: string }>;
+  metricByAlias: Map<string, string>;
+  metricKeySet: Set<string>;
+};
+
+export async function loadMediaLookups(
+  supabase: SupabaseClient,
+): Promise<MediaLookups> {
+  const [brandRes, brandAliasRes, metricRes, metricAliasRes] = await Promise.all([
+    supabase.from('media_brands').select('id, key'),
+    supabase.from('media_brand_aliases').select('alias, brand_key'),
+    supabase.from('media_metric_canonicals').select('key'),
+    supabase.from('media_metric_aliases').select('alias, metric_key'),
+  ]);
+  if (brandRes.error) throw new Error(`media_brands load failed: ${brandRes.error.message}`);
+  if (brandAliasRes.error) throw new Error(`media_brand_aliases load failed: ${brandAliasRes.error.message}`);
+  if (metricRes.error) throw new Error(`media_metric_canonicals load failed: ${metricRes.error.message}`);
+  if (metricAliasRes.error) throw new Error(`media_metric_aliases load failed: ${metricAliasRes.error.message}`);
+
+  const brandKeyToId = new Map<string, string>();
+  for (const row of brandRes.data ?? []) {
+    if (row.key && row.id) brandKeyToId.set(String(row.key), row.id as string);
+  }
+  const brandByAlias = new Map<string, { id: string; key: string }>();
+  for (const row of brandAliasRes.data ?? []) {
+    const key = row.brand_key ? String(row.brand_key) : null;
+    if (!key) continue;
+    const id = brandKeyToId.get(key);
+    if (!id || !row.alias) continue;
+    brandByAlias.set(String(row.alias).toLowerCase().trim(), { id, key });
+  }
+
+  const metricKeySet = new Set<string>();
+  for (const row of metricRes.data ?? []) {
+    if (row.key) metricKeySet.add(String(row.key));
+  }
+  const metricByAlias = new Map<string, string>();
+  for (const row of metricAliasRes.data ?? []) {
+    if (row.alias && row.metric_key) {
+      metricByAlias.set(String(row.alias).toLowerCase().trim(), row.metric_key as string);
+    }
+  }
+
+  return { brandByAlias, metricByAlias, metricKeySet };
+}
+
+
 // Rep lookups for Customer Support: tab name (uppercase, e.g. "CATHERINE")
 // maps to the seeded customer_service_reps row (mixed case, e.g. "Catherine").
 // Returns lower(name) → { id, brand_id } so the ingest can resolve every row

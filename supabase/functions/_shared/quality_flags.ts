@@ -67,6 +67,19 @@ export const QUALITY_FLAGS = {
   // `total` column always carries our computed week-sum; raw_row preserves
   // the supervisor's entered Total for traceback.
   TOTAL_MISMATCH: 'total_mismatch',
+
+  // Media Weekly: a brand-column cell in the per-week platform header row
+  // didn't match any canonical brand or alias. The row still lands (so the
+  // value isn't lost) with brand_id null and brand_key null; the supervisor
+  // adds the alias and re-runs ingest.
+  UNKNOWN_MEDIA_BRAND: 'unknown_media_brand',
+
+  // Digital Marketing: the same Campaign Name row carried multiple distinct
+  // campaign names across W1–W5 (e.g. "RESET, FARMWEY, FARMWEY, FARMWEY").
+  // The fact row uses the first non-empty name; raw_row preserves all five.
+  // Surfaced so the supervisor can split the sub-block manually if the mixed
+  // weeks were a data-entry mistake rather than a real campaign rotation.
+  MIXED_CAMPAIGN_WEEKS: 'mixed_campaign_weeks',
 } as const;
 
 export type QualityFlagKey = (typeof QUALITY_FLAGS)[keyof typeof QUALITY_FLAGS];

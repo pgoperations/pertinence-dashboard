@@ -24,6 +24,8 @@ const INGESTS = [
   { fn: 'ingest-weekly-sales', label: 'Weekly Sales' },
   { fn: 'ingest-customer-file', label: 'Customer File' },
   { fn: 'ingest-realtor-managers-weekly', label: 'Realtor Managers' },
+  { fn: 'ingest-digital-marketing', label: 'Digital Marketing' },
+  { fn: 'ingest-media-weekly', label: 'Media (Weekly)' },
 ] as const;
 
 type IngestFn = (typeof INGESTS)[number]['fn'];

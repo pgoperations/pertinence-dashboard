@@ -26,6 +26,8 @@ const INGESTS = [
   'ingest-weekly-sales',
   'ingest-customer-file',
   'ingest-realtor-managers-weekly',
+  'ingest-digital-marketing',
+  'ingest-media-weekly',
 ];
 
 const headers = {
