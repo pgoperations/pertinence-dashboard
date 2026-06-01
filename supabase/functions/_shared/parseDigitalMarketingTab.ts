@@ -246,8 +246,22 @@ export function parseDigitalMarketingTab(
 
   for (const anchor of anchors) {
     const endRow = findBlockEndRow(anchors, anchor, rows.length);
-    let currentCampaign: string | null = null;
-    let currentCampaignMixedNames: string[] | null = null;
+    // Per-week campaign assignment for the current sub-block. weekToCampaign[w-1]
+    // is the campaign name attributed to week w (1..5), or null if that week
+    // is unassigned. When supervisor writes ['MASTERCLASS 1', 'MASTERCLASS 2',
+    // 'MASTERCLASS 2', 'MASTERCLASS 3', 'MASTERCLASS 3'] this is the per-week
+    // identity — we emit ONE fact row per (campaign, metric) with only that
+    // campaign's weeks contributing. Single-campaign sub-blocks fall out of
+    // this naturally (one group → one row).
+    let weekToCampaign: Array<string | null> | null = null;
+    let distinctCampaignsInSubBlock: string[] | null = null;
+    // 1-indexed sheet row of the Campaign Name header that opened the current
+    // sub-block. Used to disambiguate source_row_id when the same campaign
+    // appears in two sub-blocks within one month — without it, the second
+    // sub-block's data would silently overwrite the first via the unique
+    // (source_sheet, source_tab, source_row_id) constraint. The row number
+    // is stable across re-runs unless the supervisor inserts rows above.
+    let subBlockSheetRow: number | null = null;
 
     for (let r = anchor.weekOneRow + 1; r < endRow; r++) {
       const row = rows[r] ?? [];
@@ -266,35 +280,32 @@ export function parseDigitalMarketingTab(
 
       // Campaign Name header: start a new sub-block.
       if (labelNorm === 'campaign name') {
-        const names: string[] = [];
+        const assignments: Array<string | null> = [null, null, null, null, null];
+        const distinct: string[] = [];
+        const seenLower = new Set<string>();
         for (let w = 0; w < 5; w++) {
           const cell = row[anchor.weekOneCol + w];
           const name = trimOrNull(cell);
-          if (name) names.push(name);
-        }
-        if (names.length === 0) {
-          // No campaign string yet — header row in template area. Skip.
-          currentCampaign = null;
-          continue;
-        }
-        // De-dupe case-insensitively, preserve order.
-        const distinct: string[] = [];
-        const seenLower = new Set<string>();
-        for (const n of names) {
-          const lower = n.toLowerCase();
-          if (!seenLower.has(lower)) {
-            seenLower.add(lower);
-            distinct.push(n);
+          if (!name) continue;
+          const upper = name.toUpperCase();
+          assignments[w] = upper;
+          if (!seenLower.has(upper.toLowerCase())) {
+            seenLower.add(upper.toLowerCase());
+            distinct.push(upper);
           }
         }
-        currentCampaign = distinct[0].toUpperCase();
-        stats.campaignsFound++;
-        if (distinct.length > 1) {
-          stats.mixedCampaignWeeks++;
-          currentCampaignMixedNames = distinct;
-        } else {
-          currentCampaignMixedNames = null;
+        if (distinct.length === 0) {
+          // No campaign string yet — header row in template area.
+          weekToCampaign = null;
+          distinctCampaignsInSubBlock = null;
+          subBlockSheetRow = null;
+          continue;
         }
+        weekToCampaign = assignments;
+        distinctCampaignsInSubBlock = distinct;
+        subBlockSheetRow = r + 1; // 1-indexed sheet row
+        stats.campaignsFound += distinct.length;
+        if (distinct.length > 1) stats.mixedCampaignWeeks++;
         continue;
       }
 
@@ -313,98 +324,133 @@ export function parseDigitalMarketingTab(
         continue;
       }
 
-      if (!currentCampaign) {
+      if (!weekToCampaign || !distinctCampaignsInSubBlock) {
         // Template / above-first-campaign row — skip silently.
         stats.rowsSkipped++;
         continue;
       }
 
-      const flags: QualityFlags = {};
-      const week_values: Record<string, number | null> = {};
-      let anyValue = false;
-      let weekSum = 0;
-      const nonNumericDetails: string[] = [];
+      // Coerce all 5 week cells once. Cells whose week isn't assigned to any
+      // campaign are still tracked for raw_row / non-numeric diagnostics.
+      const weekCoerced: Coerced[] = [];
+      for (let w = 0; w < 5; w++) {
+        weekCoerced.push(coerceNumeric(row[anchor.weekOneCol + w]));
+      }
+      const totalCell = row[anchor.weekOneCol + 5];
+      const totalCoerced = coerceNumeric(totalCell);
 
+      // Group week values by campaign. Map preserves insertion order, which
+      // mirrors source order (W1's campaign first, then W2's, etc.).
+      type CampaignGroup = {
+        weekValues: Record<string, number | null>;
+        weekSum: number;
+        anyValue: boolean;
+        nonNumericDetails: string[];
+      };
+      const byCampaign = new Map<string, CampaignGroup>();
       for (let w = 1; w <= 5; w++) {
-        const cell = row[anchor.weekOneCol + (w - 1)];
-        const c = coerceNumeric(cell);
-        week_values[String(w)] = c.value;
+        const campaign = weekToCampaign[w - 1];
+        if (!campaign) continue;
+        let g = byCampaign.get(campaign);
+        if (!g) {
+          g = {
+            weekValues: { '1': null, '2': null, '3': null, '4': null, '5': null },
+            weekSum: 0,
+            anyValue: false,
+            nonNumericDetails: [],
+          };
+          byCampaign.set(campaign, g);
+        }
+        const c = weekCoerced[w - 1];
+        g.weekValues[String(w)] = c.value;
         if (c.value !== null) {
-          anyValue = true;
-          weekSum += c.value;
+          g.anyValue = true;
+          g.weekSum += c.value;
         }
         if (c.flag !== undefined) {
           stats.nonNumericValues++;
-          nonNumericDetails.push(`w${w}='${c.flag}'`);
+          g.nonNumericDetails.push(`w${w}='${c.flag}'`);
         }
       }
 
-      if (!anyValue) {
-        // Empty metric row under an active campaign — skip rather than write
-        // an all-null fact row.
-        continue;
+      const isMultiCampaign = distinctCampaignsInSubBlock.length > 1;
+
+      for (const [campaignName, g] of byCampaign) {
+        if (!g.anyValue) continue;
+
+        const flags: QualityFlags = {};
+        if (g.nonNumericDetails.length > 0) {
+          flags[QUALITY_FLAGS.NON_NUMERIC_VALUE] = g.nonNumericDetails.join('; ');
+        }
+
+        let computedTotal: number | null = g.weekSum;
+        // Source Total is only a sensible comparison when ONE campaign occupies
+        // the sub-block — otherwise the supervisor's Total cell aggregates across
+        // all campaigns in that row. Skip the mismatch flag for multi-campaign
+        // sub-blocks; the fact row's `total` is always our computed per-campaign
+        // week sum.
+        if (!isMultiCampaign) {
+          const sourceTotal = totalCoerced.value;
+          if (totalCoerced.flag !== undefined) {
+            stats.nonNumericValues++;
+            flags[QUALITY_FLAGS.NON_NUMERIC_VALUE] =
+              [flags[QUALITY_FLAGS.NON_NUMERIC_VALUE], `total='${totalCoerced.flag}'`]
+                .filter(Boolean)
+                .join('; ');
+          }
+          if (sourceTotal !== null && Math.abs(sourceTotal - g.weekSum) > 0.0001) {
+            flags[QUALITY_FLAGS.TOTAL_MISMATCH] =
+              `source=${sourceTotal}, week_sum=${g.weekSum}`;
+          }
+          // If source Total was given but week_sum is suspiciously zero (e.g.
+          // all weeks blank but Total filled), prefer source Total.
+          if (computedTotal === 0 && sourceTotal !== null && sourceTotal !== 0) {
+            computedTotal = sourceTotal;
+          }
+        }
+
+        if (isMultiCampaign) {
+          flags[QUALITY_FLAGS.MIXED_CAMPAIGN_WEEKS] = distinctCampaignsInSubBlock.join(' | ');
+        }
+
+        const campaignSlug = slugifyCampaign(campaignName);
+        // Sub-block sheet-row in the id keeps two sub-blocks that share a
+        // campaign name (e.g. FARMWEY in two separate Jan sub-blocks) from
+        // colliding on the unique constraint. The UI's per-campaign query
+        // sums values across these rows so the campaign still reads as a
+        // single line in the panel.
+        const subBlockTag = subBlockSheetRow ? `-sb${subBlockSheetRow}` : '';
+        const source_row_id = `y${ingestYear}-m${String(anchor.month).padStart(2, '0')}-${campaignSlug}${subBlockTag}-${metric_key}`;
+
+        const raw_row: Record<string, unknown> = {
+          label: typeof rawLabel === 'string' ? rawLabel : null,
+          campaign_name: campaignName,
+          campaigns_in_sub_block: distinctCampaignsInSubBlock,
+          period_month: anchor.month,
+          week_1: row[anchor.weekOneCol] ?? null,
+          week_2: row[anchor.weekOneCol + 1] ?? null,
+          week_3: row[anchor.weekOneCol + 2] ?? null,
+          week_4: row[anchor.weekOneCol + 3] ?? null,
+          week_5: row[anchor.weekOneCol + 4] ?? null,
+          Total:  row[anchor.weekOneCol + 5] ?? null,
+          sheet_row: r + 1,
+        };
+
+        const parsed: ParsedDigitalMarketingRow = {
+          source_row_id,
+          raw_row,
+          quality_flags: flags,
+          period_year: ingestYear,
+          period_month: anchor.month,
+          campaign_name: campaignName,
+          metric_key,
+          total: computedTotal,
+          week_values: g.weekValues,
+        };
+
+        seen.set(source_row_id, parsed);
+        stats.rowsParsed++;
       }
-
-      const totalCell = row[anchor.weekOneCol + 5];
-      const totalCoerced = coerceNumeric(totalCell);
-      if (totalCoerced.flag !== undefined) {
-        stats.nonNumericValues++;
-        nonNumericDetails.push(`total='${totalCoerced.flag}'`);
-      }
-
-      let computedTotal: number | null = weekSum;
-      const sourceTotal = totalCoerced.value;
-      if (
-        sourceTotal !== null &&
-        Math.abs(sourceTotal - weekSum) > 0.0001
-      ) {
-        flags[QUALITY_FLAGS.TOTAL_MISMATCH] =
-          `source=${sourceTotal}, week_sum=${weekSum}`;
-      }
-      // If source Total was given but week_sum is suspiciously zero (e.g. all
-      // weeks blank but Total filled), prefer source Total.
-      if (computedTotal === 0 && sourceTotal !== null && sourceTotal !== 0) {
-        computedTotal = sourceTotal;
-      }
-
-      if (nonNumericDetails.length > 0) {
-        flags[QUALITY_FLAGS.NON_NUMERIC_VALUE] = nonNumericDetails.join('; ');
-      }
-
-      if (currentCampaignMixedNames && currentCampaignMixedNames.length > 1) {
-        flags[QUALITY_FLAGS.MIXED_CAMPAIGN_WEEKS] = currentCampaignMixedNames.join(' | ');
-      }
-
-      const campaignSlug = slugifyCampaign(currentCampaign);
-      const source_row_id = `y${ingestYear}-m${String(anchor.month).padStart(2, '0')}-${campaignSlug}-${metric_key}`;
-
-      const raw_row: Record<string, unknown> = {
-        label: typeof rawLabel === 'string' ? rawLabel : null,
-        campaign_name: currentCampaign,
-        period_month: anchor.month,
-        week_1: row[anchor.weekOneCol] ?? null,
-        week_2: row[anchor.weekOneCol + 1] ?? null,
-        week_3: row[anchor.weekOneCol + 2] ?? null,
-        week_4: row[anchor.weekOneCol + 3] ?? null,
-        week_5: row[anchor.weekOneCol + 4] ?? null,
-        Total:  row[anchor.weekOneCol + 5] ?? null,
-        sheet_row: r + 1,
-      };
-
-      const parsed: ParsedDigitalMarketingRow = {
-        source_row_id,
-        raw_row,
-        quality_flags: flags,
-        period_year: ingestYear,
-        period_month: anchor.month,
-        campaign_name: currentCampaign,
-        metric_key,
-        total: computedTotal,
-        week_values,
-      };
-
-      seen.set(source_row_id, parsed);
-      stats.rowsParsed++;
     }
   }
 

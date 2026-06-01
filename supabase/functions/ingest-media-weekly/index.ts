@@ -132,6 +132,21 @@ Deno.serve(async (req) => {
       value: r.value,
     }));
 
+    // Stale-row sweep, scoped to the years we're rebuilding. If the supervisor
+    // moves a brand column (PG <-> REALVEST swap) or renames a platform header,
+    // the source_row_id format changes and old rows would otherwise stick
+    // around undetected. Scoped delete keeps prior-year data safe.
+    const yearsToIngest = YEAR_SECTIONS.map((s) => s.year);
+    const { error: cleanupError } = await supabase
+      .from('media_weekly_metrics')
+      .delete()
+      .eq('source_sheet', SOURCE_SHEET)
+      .eq('source_tab', SOURCE_TAB)
+      .in('period_year', yearsToIngest);
+    if (cleanupError) {
+      throw new Error(`media_weekly_metrics cleanup failed: ${cleanupError.message}`);
+    }
+
     const CHUNK = 500;
     let upserted = 0;
     for (let i = 0; i < upsertRows.length; i += CHUNK) {

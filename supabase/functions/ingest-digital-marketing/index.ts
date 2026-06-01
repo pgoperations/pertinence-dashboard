@@ -110,6 +110,22 @@ Deno.serve(async (req) => {
       week_values: r.week_values,
     }));
 
+    // Stale-row sweep, scoped to the years we're rebuilding. The parser emits
+    // one fact row per (year, month, campaign, metric, sub-block-row), so if
+    // the supervisor deletes a sub-block or renames a campaign between runs,
+    // the old row no longer matches an upsert key and would stick around
+    // undetected. Scope the delete to YEARS_TO_INGEST so prior-year data
+    // (when 2027 lands) is left alone.
+    const { error: cleanupError } = await supabase
+      .from('digital_marketing_monthly')
+      .delete()
+      .eq('source_sheet', SOURCE_SHEET)
+      .eq('source_tab', SOURCE_TAB)
+      .in('period_year', YEARS_TO_INGEST);
+    if (cleanupError) {
+      throw new Error(`digital_marketing_monthly cleanup failed: ${cleanupError.message}`);
+    }
+
     const CHUNK = 500;
     let upserted = 0;
     for (let i = 0; i < upsertRows.length; i += CHUNK) {
