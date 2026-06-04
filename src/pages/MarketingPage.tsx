@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { SectionHeading } from '../components/SectionHeading';
 import { StatusBanner } from '../components/StatusBanner';
+import { NarrativeCard } from '../components/NarrativeCard';
+import { buildMarketingNarrative } from '../lib/narrative';
 import { MarketingKpiStrip } from '../components/marketing/MarketingKpiStrip';
 import { SpendByCategory } from '../components/marketing/SpendByCategory';
 import { MonthlySpendChart } from '../components/marketing/MonthlySpendChart';
@@ -62,6 +64,11 @@ export default function MarketingPage() {
     marketingExpensesUpdatedAt: null,
   };
 
+  const narrative = useMemo(
+    () => (data ? buildMarketingNarrative(data, range) : null),
+    [data, range],
+  );
+
   return (
     <>
       <SectionHeading title="Marketing" subtitle="Spend by category and month" />
@@ -80,6 +87,8 @@ export default function MarketingPage() {
           sources={sources}
           loading={loading}
         />
+
+        <NarrativeCard narrative={narrative} loading={loading} />
 
         <SpendByCategory
           rows={byCategory}

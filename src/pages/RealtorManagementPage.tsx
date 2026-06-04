@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { SectionHeading } from '../components/SectionHeading';
 import { StatusBanner } from '../components/StatusBanner';
 import { StatusChip } from '../components/StatusChip';
+import { NarrativeCard } from '../components/NarrativeCard';
+import { buildRealtorNarrative } from '../lib/narrative';
 import { GreyedCard } from '../components/sales/GreyedCard';
 import { MetricMonthlyTable } from '../components/realtor-management/MetricMonthlyTable';
 import { RealtorMonthlyTrend } from '../components/realtor-management/RealtorMonthlyTrend';
@@ -51,6 +53,11 @@ export default function RealtorManagementPage() {
 
   const sourceLine = `Source: realtor_metrics_monthly · refreshed ${formatAsOf(latestUpdatedAt)}`;
 
+  const narrative = useMemo(
+    () => (data ? buildRealtorNarrative(data, range) : null),
+    [data, range],
+  );
+
   return (
     <>
       <SectionHeading title="Realtor Management" subtitle="Recruitment, activity, performance" />
@@ -68,6 +75,11 @@ export default function RealtorManagementPage() {
             populated. Per-manager performance (Mrs Kemi / Richard Makava / Debbie)
             remains v1-out-of-scope per DESIGN_DECISIONS.
           </StatusBanner>
+        )}
+
+        {/* Narrative only when there's data — the banner above covers the empty case. */}
+        {(loading || (data && data.monthsObserved > 0)) && (
+          <NarrativeCard narrative={narrative} loading={loading} />
         )}
 
         <MetricMonthlyTable

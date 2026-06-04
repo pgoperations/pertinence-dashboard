@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PanelCard } from '../PanelCard';
 import { StatusChip } from '../StatusChip';
+import { NarrativeCard } from '../NarrativeCard';
+import { buildMediaNarrative } from '../../lib/narrative';
 import { formatNumber, formatAsOf } from '../../lib/format';
 import {
   loadMediaPanelData,
@@ -49,6 +51,19 @@ export function MediaPanel() {
     return data.byBrand.find((b) => b.brandKey === selectedBrandKey) ?? data.allBrandsSummary;
   }, [data, selectedBrandKey]);
 
+  const narrative = useMemo(
+    () =>
+      data && selectedSummary
+        ? buildMediaNarrative(
+            selectedSummary,
+            selectedSummary.brandName,
+            range,
+            data.sourceUpdatedAt,
+          )
+        : null,
+    [data, selectedSummary, range],
+  );
+
   return (
     <div className="grid gap-4 md:gap-5">
       {error && (
@@ -64,6 +79,8 @@ export function MediaPanel() {
         sourceUpdatedAt={data?.sourceUpdatedAt ?? null}
         loading={loading}
       />
+
+      <NarrativeCard narrative={narrative} loading={loading} />
 
       {(['facebook', 'instagram', 'youtube'] as MediaPlatform[]).map((p) => (
         <PlatformCard

@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { SectionHeading } from '../components/SectionHeading';
 import { StatusBanner } from '../components/StatusBanner';
+import { NarrativeCard } from '../components/NarrativeCard';
+import { buildSalesNarrative } from '../lib/narrative';
 import { KpiStrip } from '../components/sales/KpiStrip';
 import { MoMChart } from '../components/sales/MoMChart';
 import { PlotSizePivot } from '../components/sales/PlotSizePivot';
@@ -90,6 +92,11 @@ export default function SalesPage() {
     plotSalesRefreshedAt: null,
   };
 
+  const narrative = useMemo(
+    () => (data ? buildSalesNarrative(data, range) : null),
+    [data, range],
+  );
+
   return (
     <>
       <SectionHeading title="Sales (Land)" subtitle="Plots, revenue, realtor attribution" />
@@ -107,6 +114,7 @@ export default function SalesPage() {
           sources={sources}
           loading={loading}
         />
+        <NarrativeCard narrative={narrative} loading={loading} />
         <MoMChart monthly={monthly} loading={loading} />
         <PlotSizePivot pivot={pivot} loading={loading} />
         <RevenueByLocation

@@ -16,6 +16,10 @@ type AuthContextValue = {
   profile: Profile | null;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
+  /** Sends a password-recovery email whose link lands on /reset-password. */
+  requestPasswordReset: (email: string) => Promise<{ error: string | null }>;
+  /** Sets a new password on the current (recovery or live) session. */
+  updatePassword: (password: string) => Promise<{ error: string | null }>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -143,6 +147,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       signOut: async () => {
         await supabase.auth.signOut();
+      },
+      requestPasswordReset: async (email) => {
+        const redirectTo = `${window.location.origin}/reset-password`;
+        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+        return { error: error?.message ?? null };
+      },
+      updatePassword: async (password) => {
+        const { error } = await supabase.auth.updateUser({ password });
+        return { error: error?.message ?? null };
       },
     }),
     [status, session, profile],

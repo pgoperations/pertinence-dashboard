@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { SectionHeading } from '../components/SectionHeading';
 import { StatusBanner } from '../components/StatusBanner';
+import { NarrativeCard } from '../components/NarrativeCard';
+import { buildCustomerSupportNarrative } from '../lib/narrative';
 import { BrandToggle } from '../components/customer-support/BrandToggle';
 import { CsKpiStrip } from '../components/customer-support/CsKpiStrip';
 import { EnquiriesByChannel } from '../components/customer-support/EnquiriesByChannel';
@@ -62,6 +64,11 @@ export default function CustomerSupportPage() {
   const sources = data?.sources ?? { logsUpdatedAt: null };
   const brands = data?.brands ?? [];
 
+  const narrative = useMemo(
+    () => (data ? buildCustomerSupportNarrative(data, range) : null),
+    [data, range],
+  );
+
   return (
     <>
       <SectionHeading title="Customer Support" subtitle="Enquiries, complaints, resolution" />
@@ -91,6 +98,8 @@ export default function CustomerSupportPage() {
           sources={sources}
           loading={loading}
         />
+
+        <NarrativeCard narrative={narrative} loading={loading} />
 
         <EnquiriesByChannel rows={byChannel} loading={loading} />
 

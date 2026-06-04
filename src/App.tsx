@@ -3,6 +3,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppShell } from './components/AppShell';
 import { RefreshProvider } from './hooks/useRefresh';
 import SignInPage from './pages/SignInPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import SalesPage from './pages/SalesPage';
 import MarketingPage from './pages/MarketingPage';
 import CustomerSupportPage from './pages/CustomerSupportPage';
@@ -14,6 +15,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/sign-in" element={<SignInPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       <Route
         element={

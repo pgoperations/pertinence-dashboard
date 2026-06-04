@@ -168,6 +168,18 @@ export function IconCloudDownload(props: IconProps) {
   );
 }
 
+export function IconSparkles(props: IconProps) {
+  return (
+    <svg {...base} aria-hidden {...props}>
+      <path d="M12 3v4" />
+      <path d="M12 17v4" />
+      <path d="M5 12H3" />
+      <path d="M21 12h-2" />
+      <path d="M12 7c0 2.76 2.24 5 5 5-2.76 0-5 2.24-5 5 0-2.76-2.24-5-5-5 2.76 0 5-2.24 5-5Z" />
+    </svg>
+  );
+}
+
 export function IconAlert(props: IconProps) {
   return (
     <svg {...base} aria-hidden {...props}>

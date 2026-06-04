@@ -3,8 +3,8 @@
 // reference shape lives in supabase/functions/ingest-bank-deposit/index.ts).
 //
 // Trigger paths:
-//   * Scheduled (every 15 min) via Supabase cron — wired in step 9 of the roadmap (HARD launch requirement; not yet deployed)
-//   * Admin "Re-pull from Sheets" button from the dashboard — also step 9
+//   * Scheduled (every 15 min) via pg_cron + pg_net — see migration 019 (live)
+//   * On-demand "Sync Sheets" button in the app header (RepullButton)
 //
 // Key shape differences from Bank Deposit:
 //
