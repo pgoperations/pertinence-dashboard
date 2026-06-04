@@ -4,7 +4,6 @@ import { StatusBanner } from '../components/StatusBanner';
 import { StatusChip } from '../components/StatusChip';
 import { NarrativeCard } from '../components/NarrativeCard';
 import { buildRealtorNarrative } from '../lib/narrative';
-import { GreyedCard } from '../components/sales/GreyedCard';
 import { MetricMonthlyTable } from '../components/realtor-management/MetricMonthlyTable';
 import { RealtorMonthlyTrend } from '../components/realtor-management/RealtorMonthlyTrend';
 import { useDateRange } from '../hooks/useDateRange';
@@ -108,26 +107,6 @@ export default function RealtorManagementPage() {
           recruitment={recruitment}
           activity={activity}
         />
-
-        <div>
-          <h2 className="mb-3 font-heading text-sm font-semibold uppercase tracking-wide text-slate-600 md:text-base">
-            Out of v1 scope
-          </h2>
-          <div className="grid gap-4 md:grid-cols-3 md:gap-5">
-            <GreyedCard
-              title="Per-manager performance"
-              blocker="Mrs Kemi / Richard Makava / Debbie tables only existed in the H1 2025 PDF as one-off MAY/JUNE snapshots. Recurring source does not exist — Phase 2 candidate once supervisor commits to a manual-entry or OneApp pull."
-            />
-            <GreyedCard
-              title="Newly onboarded realtors — Digital Ad"
-              blocker="Sub-panel only existed for MAY/JUNE 2025 in the H1 PDF (digital-ad acquisition cohort). No recurring tracking — deferred until a source appears."
-            />
-            <GreyedCard
-              title="OneApp prospect interactions"
-              blocker="Customer-to-Prospect ratio (27:95) and Conversion Rate (28.4%) from the H1 PDF are AWS-backed. Phase 2 once API access lands — same blocker as Sales OneApp card."
-            />
-          </div>
-        </div>
       </div>
     </>
   );

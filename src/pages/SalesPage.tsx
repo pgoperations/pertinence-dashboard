@@ -11,7 +11,6 @@ import { QuarterPair } from '../components/sales/QuarterPair';
 import { TopRealtors } from '../components/sales/TopRealtors';
 import { TopDeals } from '../components/sales/TopDeals';
 import { WeeklyDetail } from '../components/sales/WeeklyDetail';
-import { GreyedCard } from '../components/sales/GreyedCard';
 import { useDateRange } from '../hooks/useDateRange';
 import { useRefresh } from '../hooks/useRefresh';
 import {
@@ -136,21 +135,6 @@ export default function SalesPage() {
         </div>
 
         <WeeklyDetail weeks={weeks} loading={loading} />
-
-        <div className="grid gap-4 md:grid-cols-3 md:gap-5">
-          <GreyedCard
-            title="OneApp Customer Interaction"
-            blocker="Awaiting AWS API access (Phase 2)."
-          />
-          <GreyedCard
-            title="Year-on-year (2024 vs 2025)"
-            blocker="2025 source data not yet ingested."
-          />
-          <GreyedCard
-            title="Realtor sale tiers"
-            blocker="Per-customer realtor attribution pending — sub-1M / 1–5M / 5–10M tiers from H1 PDF."
-          />
-        </div>
       </div>
     </>
   );

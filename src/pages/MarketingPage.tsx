@@ -7,7 +7,6 @@ import { MarketingKpiStrip } from '../components/marketing/MarketingKpiStrip';
 import { SpendByCategory } from '../components/marketing/SpendByCategory';
 import { MonthlySpendChart } from '../components/marketing/MonthlySpendChart';
 import { DigitalMarketingPanel } from '../components/digital-marketing/DigitalMarketingPanel';
-import { GreyedCard } from '../components/sales/GreyedCard';
 import { useDateRange } from '../hooks/useDateRange';
 import { useRefresh } from '../hooks/useRefresh';
 import {
@@ -100,21 +99,6 @@ export default function MarketingPage() {
         <MonthlySpendChart monthly={monthly} loading={loading} />
 
         <DigitalMarketingPanel />
-
-        <div className="grid gap-4 md:grid-cols-3 md:gap-5">
-          <GreyedCard
-            title="Billboard cost"
-            blocker="Finance-funded outside the petty cashbook (₦19.95M H1 2025 ref: Ajah ₦13.5M + Egbeda ₦6.45M). Manual-entry form pending."
-          />
-          <GreyedCard
-            title="Activities with metrics"
-            blocker="Activity × month × expense × attendance/recruitment table from H1 2025 PDF. Needs a structured activity log — manual-entry form pending."
-          />
-          <GreyedCard
-            title="Income side"
-            blocker="Petty cashbook receipts (Balance b/f, transfers) excluded from v1 ingest. Manual reconciliation required."
-          />
-        </div>
       </div>
     </>
   );

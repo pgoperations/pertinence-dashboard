@@ -16,6 +16,41 @@ const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets.readonly';
 const JWT_BEARER_GRANT = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
 
+// Google occasionally returns a transient 503 ("service unavailable") or 429
+// (rate limit) on the token exchange or a Sheets read. A single blip used to
+// abort an entire ingest — Customer Support is most exposed (5 large reads), so
+// its run failed wholesale. Every Google call now goes through fetchWithRetry:
+// exponential backoff on retryable statuses + network errors, fail-fast on
+// 4xx auth/not-found. 4 attempts, ~0.5/1/2s backoff + jitter.
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(
+  url: string | URL,
+  init: RequestInit,
+  attempts = 4,
+): Promise<Response> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    const isLast = i === attempts - 1;
+    try {
+      const res = await fetch(url, init);
+      // Success or a non-retryable (e.g. 401/403/404) → hand back to the caller,
+      // whose `!res.ok` branch throws a descriptive error with the body.
+      if (res.ok || !RETRYABLE_STATUS.has(res.status) || isLast) return res;
+      lastErr = new Error(`HTTP ${res.status}`);
+    } catch (err) {
+      lastErr = err; // network-level failure
+      if (isLast) throw err;
+    }
+    await sleep(Math.min(2000, 500 * 2 ** i) + Math.floor(Math.random() * 250));
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
+
 function b64urlEncode(bytes: Uint8Array): string {
   let bin = '';
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
@@ -66,7 +101,7 @@ async function signJwt(email: string, key: CryptoKey): Promise<string> {
 
 async function exchangeJwtForAccessToken(jwt: string): Promise<string> {
   const body = new URLSearchParams({ grant_type: JWT_BEARER_GRANT, assertion: jwt });
-  const res = await fetch(TOKEN_URL, {
+  const res = await fetchWithRetry(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
@@ -112,7 +147,7 @@ export async function getSheetTabs(
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}`,
   );
   url.searchParams.set('fields', 'sheets.properties');
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!res.ok) {
@@ -141,7 +176,7 @@ export async function readSheetValues(
   );
   url.searchParams.set('valueRenderOption', 'UNFORMATTED_VALUE');
   url.searchParams.set('dateTimeRenderOption', 'SERIAL_NUMBER');
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!res.ok) {

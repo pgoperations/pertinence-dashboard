@@ -55,6 +55,15 @@ export const QUALITY_FLAGS = {
   // is visible. Value is the column A raw date used.
   DATE_FALLBACK_TO_A: 'date_fallback_to_a',
 
+  // Bank Deposit `2026 LAND`: the ingested txn_date (column L) lands after the
+  // ingest run date — i.e. a transaction dated in the future, which is almost
+  // always a date typo in the supervisor's ledger (e.g. a row dated weeks ahead
+  // that then shows up as the "latest" week in the dashboard). Surfaced as a
+  // self-healing `data_quality_alerts` row, never silently dropped (supervisor
+  // #3). Detail carries the offending date. A 1-day grace absorbs timezone
+  // boundaries so same-day Lagos entries aren't false-flagged.
+  FUTURE_TXN_DATE: 'future_txn_date',
+
   // Realtor metrics: a week or total cell held an unexpected non-numeric,
   // non-NIL string. Numeric coercion treated it as 0 to keep aggregates
   // computable; the raw value is preserved in raw_row for inspection. Adding

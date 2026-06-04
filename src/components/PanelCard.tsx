@@ -18,7 +18,7 @@ export function PanelCard({
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 md:p-6">
       {(title || right) && (
-        <div className="mb-3 flex items-start justify-between gap-3 md:mb-4">
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-x-3 gap-y-1 md:mb-4">
           <div className="min-w-0">
             {title && (
               <h2 className="font-heading text-base font-semibold text-slate-900 md:text-lg">

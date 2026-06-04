@@ -35,6 +35,9 @@
 //   * unknown_purpose, unknown_location  — alias didn't match a canonical
 //   * unparseable_date                    — non-empty but unparseable cell
 //   * null_sales_person                   — column J empty (~56% of 2026 LAND)
+//   * future_txn_date                     — txn_date > run date + 1d grace; also
+//                                           rolled up into a self-healing
+//                                           data_quality_alerts row (warning)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import {
@@ -133,6 +136,7 @@ function parseRow(
   txn_date: string | null,
   dateUnparseable: boolean,
   dateFallbackToA: unknown,
+  futureThreshold: string,
   lookups: { locationByAlias: Map<string, string>; purposeByAlias: Map<string, string> },
 ): ParsedRow | null {
   // Skip totally blank rows (rare but happen in spreadsheets).
@@ -144,6 +148,11 @@ function parseRow(
   if (dateUnparseable) flags[QUALITY_FLAGS.UNPARSEABLE_DATE] = true;
   if (dateFallbackToA !== null) {
     flags[QUALITY_FLAGS.DATE_FALLBACK_TO_A] = `column-A: ${String(dateFallbackToA)}`;
+  }
+  // Future-dated row → almost certainly a date typo in column L. Flag it; the
+  // serve handler rolls these up into a data_quality_alerts row.
+  if (txn_date && txn_date > futureThreshold) {
+    flags[QUALITY_FLAGS.FUTURE_TXN_DATE] = txn_date;
   }
 
   const amount_received = toNumberOrZero(row[COL.AMOUNT]);
@@ -207,6 +216,14 @@ Deno.serve(async (req) => {
     const sheetData = await readSheetValues(accessToken, spreadsheetId, READ_RANGE);
     const rawRows = sheetData.values ?? [];
 
+    // Future-date threshold: ingest UTC date + 1 day of grace. The grace absorbs
+    // the Lagos (UTC+1) timezone boundary so a legitimately same-day entry near
+    // midnight isn't flagged; anything dated 2+ days ahead is a real anomaly.
+    const runDate = startedAt.slice(0, 10);
+    const graceIso = new Date(Date.parse(`${runDate}T00:00:00Z`) + 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+
     // Date strategy on 2026 LAND:
     //   * Primary: column L (supervisor's clean working ledger).
     //   * Tail fallback: column A is consulted ONLY for rows AFTER the last
@@ -262,7 +279,7 @@ Deno.serve(async (req) => {
         if (txn_date !== null) forwardFilledDateCount++;
       }
 
-      const parsedRow = parseRow(row, sheetRowNumber, txn_date, dateUnparseable, dateFallbackToA, lookups);
+      const parsedRow = parseRow(row, sheetRowNumber, txn_date, dateUnparseable, dateFallbackToA, graceIso, lookups);
       if (!parsedRow) {
         blankSkipped++;
         continue;
@@ -317,6 +334,48 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Surface future-dated rows as a SELF-HEALING data_quality_alert (supervisor
+    // #3: surface, never silently reconcile). A typo'd ledger date weeks ahead
+    // would otherwise become the "latest" week in the dashboard. We clear prior
+    // unresolved alerts of this type each run, then re-insert only if any remain
+    // — so correcting the sheet + re-syncing makes the alert disappear on its own.
+    // Resolved alerts are left untouched. Best-effort: an alert-write failure
+    // doesn't fail the ingest (the rows are already flagged + upserted).
+    const futureRows = parsed.filter((r) => r.quality_flags[QUALITY_FLAGS.FUTURE_TXN_DATE]);
+    let futureAlertError: string | null = null;
+    const del = await supabase
+      .from('data_quality_alerts')
+      .delete()
+      .eq('alert_type', QUALITY_FLAGS.FUTURE_TXN_DATE)
+      .eq('resolved', false);
+    if (del.error) {
+      futureAlertError = `clear: ${del.error.message}`;
+    } else if (futureRows.length > 0) {
+      const { error: insErr } = await supabase.from('data_quality_alerts').insert({
+        alert_type: QUALITY_FLAGS.FUTURE_TXN_DATE,
+        severity: 'warning',
+        period_year: null,
+        period_month: null,
+        subject: `${futureRows.length} Bank Deposit row(s) dated after ${runDate} — likely a date typo in column L`,
+        details: {
+          run_date: runDate,
+          threshold: graceIso,
+          count: futureRows.length,
+          source_sheet: SOURCE_SHEET,
+          source_tab: SOURCE_TAB,
+          rows: futureRows.slice(0, 25).map((r) => ({
+            source_row_id: r.source_row_id,
+            txn_date: r.txn_date,
+            amount_received: r.amount_received,
+            customer_name: r.customer_name,
+            sales_person: r.sales_person,
+          })),
+        },
+      });
+      if (insErr) futureAlertError = `insert: ${insErr.message}`;
+    }
+    if (futureAlertError) console.error('ingest-bank-deposit alert write:', futureAlertError);
+
     return jsonResponse({
       ok: true,
       startedAt,
@@ -330,6 +389,8 @@ Deno.serve(async (req) => {
       dateFallbackCount,
       duplicateTransCodes,
       flagCounts,
+      futureTxnDateCount: futureRows.length,
+      futureAlertError,
       aggregateRowsInserted: refreshResult,
     });
   } catch (err) {

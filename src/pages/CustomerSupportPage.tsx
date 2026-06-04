@@ -8,7 +8,6 @@ import { CsKpiStrip } from '../components/customer-support/CsKpiStrip';
 import { EnquiriesByChannel } from '../components/customer-support/EnquiriesByChannel';
 import { ComplaintsByCategory } from '../components/customer-support/ComplaintsByCategory';
 import { CsMonthlyTrend } from '../components/customer-support/CsMonthlyTrend';
-import { GreyedCard } from '../components/sales/GreyedCard';
 import { useDateRange } from '../hooks/useDateRange';
 import { useRefresh } from '../hooks/useRefresh';
 import {
@@ -74,7 +73,7 @@ export default function CustomerSupportPage() {
       <SectionHeading title="Customer Support" subtitle="Enquiries, complaints, resolution" />
 
       <div className="grid gap-4 md:gap-5">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <p className="text-xs text-slate-500">
             Brand filter applies to every card below. PPL default mirrors the H1 PDF.
           </p>
@@ -106,21 +105,6 @@ export default function CustomerSupportPage() {
         <ComplaintsByCategory rows={byCategory} loading={loading} />
 
         <CsMonthlyTrend monthly={monthly} loading={loading} />
-
-        <div className="grid gap-4 md:grid-cols-3 md:gap-5">
-          <GreyedCard
-            title="Avg resolution time"
-            blocker="Resolution-time fields (cols O–Q on each rep tab) need supervisor input on time-zone / business-hours math. Migration 014 sets avg_resolution_minutes to NULL until that decision lands."
-          />
-          <GreyedCard
-            title="Per-rep breakdown"
-            blocker="Per-rep metrics (Catherine / Mariam / Mary / Yetunde / Lovinal) — currently aggregated to brand level. Phase 2 candidate once the supervisor confirms the configurable roster."
-          />
-          <GreyedCard
-            title="Customer satisfaction"
-            blocker="No CSAT survey source today. Manual-entry form or post-resolution survey pending."
-          />
-        </div>
       </div>
     </>
   );
