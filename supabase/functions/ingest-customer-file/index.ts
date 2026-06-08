@@ -44,11 +44,14 @@ import {
 } from '../_shared/parsePlotType.ts';
 import { QUALITY_FLAGS, type QualityFlags } from '../_shared/quality_flags.ts';
 import { handlePreflight, jsonResponse } from '../_shared/cors.ts';
+import { discoverYearTabs } from '../_shared/yearTabs.ts';
 
 const SOURCE_SHEET = 'bank_deposit_mirror';
-const SOURCE_TAB = '2026 Customer File';
+// Year-agnostic discovery — picks up "2027 Customer File" automatically when
+// the supervisor adds it to the same spreadsheet (carryover fix 2026-06-04).
 // Read columns A:O (15 cols). Future cols beyond O are out of scope for v1.
-const READ_RANGE = `${SOURCE_TAB}!A2:O`;
+const TAB_PATTERN = /^(\d{4}) Customer File$/;
+const READ_RANGE_SUFFIX = 'A2:O';
 
 // Named column constants (0-indexed within each row array from the API).
 // Header inspected 2026-05-18.
@@ -152,19 +155,34 @@ Deno.serve(async (req) => {
       loadPlotTypeLookup(supabase),
     ]);
 
-    const sheetData = await readSheetValues(accessToken, spreadsheetId, READ_RANGE);
-    const rawRows = sheetData.values ?? [];
+    const yearTabs = await discoverYearTabs(accessToken, spreadsheetId, TAB_PATTERN);
+    if (yearTabs.length === 0) {
+      throw new Error(
+        'No "<year> Customer File" tab found (expected e.g. "2026 Customer File").',
+      );
+    }
 
     // Forward-fill convention same as Bank Deposit 2026 LAND: empty col A →
     // inherit the last successfully-parsed date. Non-empty but unparseable →
     // flag unparseable_date and do NOT forward-fill (typo can't silently
-    // inherit a wrong date).
+    // inherit a wrong date). lastValidDate resets per tab so a new year never
+    // inherits the prior year's trailing date.
     const parsed: ParsedRow[] = [];
+    let rowsRead = 0;
     let blankSkipped = 0;
     let forwardFilledDateCount = 0;
-    let lastValidDate: string | null = null;
 
-    for (let i = 0; i < rawRows.length; i++) {
+    for (const { tab: sourceTab } of yearTabs) {
+     const sheetData = await readSheetValues(
+       accessToken,
+       spreadsheetId,
+       `${sourceTab}!${READ_RANGE_SUFFIX}`,
+     );
+     const rawRows = sheetData.values ?? [];
+     rowsRead += rawRows.length;
+     let lastValidDate: string | null = null;
+
+     for (let i = 0; i < rawRows.length; i++) {
       const sheetRowNumber = i + 2;
       const row = rawRows[i] ?? [];
 
@@ -224,7 +242,7 @@ Deno.serve(async (req) => {
 
       parsed.push({
         source_sheet: SOURCE_SHEET,
-        source_tab: SOURCE_TAB,
+        source_tab: sourceTab,
         source_row_id: `row-${sheetRowNumber}`,
         raw_row,
         quality_flags: flags,
@@ -239,6 +257,7 @@ Deno.serve(async (req) => {
         plot_count,
         realtor_manager_id: null,
       });
+     }
     }
 
     const CHUNK = 500;
@@ -265,8 +284,8 @@ Deno.serve(async (req) => {
       ok: true,
       startedAt,
       finishedAt: new Date().toISOString(),
-      source: { sheet: SOURCE_SHEET, tab: SOURCE_TAB, range: READ_RANGE },
-      rowsRead: rawRows.length,
+      source: { sheet: SOURCE_SHEET, tabs: yearTabs.map((t) => t.tab) },
+      rowsRead,
       rowsUpserted: upserted,
       blankSkipped,
       forwardFilledDateCount,

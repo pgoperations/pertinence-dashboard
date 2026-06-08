@@ -27,8 +27,10 @@ const MONTH_NAMES: Record<string, number> = {
   september: 9, october: 10, november: 11, december: 12,
 };
 
-// Years the dashboard ingests. Adding 2027 later is a one-line change here.
-const INGEST_YEARS = new Set<number>([2026]);
+// Years the dashboard ingests. Year-agnostic from 2026 forward (carryover fix
+// 2026-06-04): a "January 2027" tab is picked up automatically. Upper bound is
+// current UTC year + 1 so a typo'd far-future tab ("May 2099") is ignored.
+const MIN_INGEST_YEAR = 2026;
 
 export type TabPeriod = { year: number; month: number };
 
@@ -43,7 +45,8 @@ export function parseMarketingTabName(name: string): TabPeriod | null {
   const month = MONTH_NAMES[m[1].toLowerCase()];
   const year = Number(m[2]);
   if (!month) return null;
-  if (!INGEST_YEARS.has(year)) return null;
+  const maxYear = new Date().getUTCFullYear() + 1;
+  if (year < MIN_INGEST_YEAR || year > maxYear) return null;
   return { year, month };
 }
 

@@ -32,15 +32,15 @@ import {
   type ParsedMetricRow,
 } from '../_shared/parseRealtorMetricsTab.ts';
 import { handlePreflight, jsonResponse } from '../_shared/cors.ts';
+import { discoverYearTabs } from '../_shared/yearTabs.ts';
 
 const SOURCE_SHEET = 'marketing_team_reporting_template';
 
-// One tab per year — for now, only 2026 is in-scope. Adding next year is a
-// code change here, on purpose: the supervisor confirms which tab name to
-// read and what year to anchor each metric_key to before any ingest runs.
-const TABS_TO_INGEST: Array<{ tab: string; year: number }> = [
-  { tab: '2026 Realtors Managers Weekly Report', year: 2026 },
-];
+// One tab per year. Discovered dynamically so a "2027 Realtors Managers Weekly
+// Report" tab added to the same spreadsheet is picked up with no code change
+// (carryover fix, 2026-06-04). The metric_key year anchor comes from the tab
+// name's year, not a hardcoded constant.
+const TAB_PATTERN = /^(\d{4}) Realtors Managers Weekly Report$/;
 
 // Block heights vary by populated month count. A1:Z300 covers all 12 month
 // blocks (~30 rows each, 2 blocks per band = 6 bands × 30 rows = 180 rows
@@ -75,11 +75,19 @@ Deno.serve(async (req) => {
     const accessToken = await getSheetsAccessToken();
     const aliasMap = await loadRealtorMetricAliases(supabase);
 
+    const tabsToIngest = await discoverYearTabs(accessToken, spreadsheetId, TAB_PATTERN);
+    if (tabsToIngest.length === 0) {
+      throw new Error(
+        `No "<year> Realtors Managers Weekly Report" tab found in the spreadsheet. ` +
+          `Expected e.g. "2026 Realtors Managers Weekly Report".`,
+      );
+    }
+
     type TaggedRow = ParsedMetricRow & { source_tab: string };
     const allRows: TaggedRow[] = [];
     const tabResults: TabResult[] = [];
 
-    for (const { tab, year } of TABS_TO_INGEST) {
+    for (const { tab, year } of tabsToIngest) {
       const range = `${tab}!${READ_RANGE_SUFFIX}`;
       const data = await readSheetValues(accessToken, spreadsheetId, range);
       const { rows, stats } = parseRealtorMetricsTab(

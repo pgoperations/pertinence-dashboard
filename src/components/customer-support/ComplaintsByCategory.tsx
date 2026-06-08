@@ -6,8 +6,9 @@ import { formatNumber, formatMonthYear } from '../../lib/format';
 import type { CategoryRow } from '../../lib/queries/customerSupport';
 
 const TOP_N = 8;
-const COLOR_TOTAL = '#94A3B8';    // slate-400 — outer "total complaints" bar
-const COLOR_RESOLVED = '#059669'; // emerald-600 — resolved overlay (positive outcome, distinct from sky)
+const COLOR_RESOLVED = '#059669';   // emerald-600 — resolved + responded
+const COLOR_UNRESOLVED = '#D97706'; // amber-600 — pending + in progress
+const COLOR_OTHER = '#CBD5E1';      // slate-300 — other / no status
 
 export function ComplaintsByCategory({
   rows,
@@ -30,8 +31,8 @@ export function ComplaintsByCategory({
     return (
       <PanelCard
         title="Complaints by category"
-        subtitle="Resolved overlay (sky) over total complaints (slate)."
-        source="Source: customer_support_logs filtered to rows with a complaint_category_id. Resolution per migration 014 — RESPONDED excluded."
+        subtitle="Each bar splits resolved / unresolved / other."
+        source="Source: customer_support_logs filtered to rows with a complaint_category_id. Resolved = RESOLVED/RESPONDED; Unresolved = PENDING/IN PROGRESS."
       >
         <div className="grid h-32 place-items-center rounded-lg bg-slate-50 text-sm text-slate-500">
           No complaints in this range.
@@ -43,8 +44,9 @@ export function ComplaintsByCategory({
   return (
     <PanelCard
       title="Complaints by category"
-      subtitle="Tap a row for monthly trend, resolution rate, and sample raw text."
-      source='Source: customer_support_logs filtered to rows with a complaint_category_id. "Resolved" = strict lowercase "resolved" — RESPONDED/PENDING/IN PROGRESS excluded.'
+      subtitle="Bar = resolved / unresolved / other. Tap a row for its monthly trend and sample raw text."
+      source='Source: customer_support_logs filtered to rows with a complaint_category_id. Resolved = status RESOLVED or RESPONDED; Unresolved = PENDING or IN PROGRESS; everything else is Other. A multi-complaint ticket counts in each of its categories.'
+      right={<CatLegend />}
     >
       <ul className="space-y-3">
         {loading
@@ -98,9 +100,9 @@ function CategoryRowItem({
   isOpen: boolean;
   onToggle: () => void;
 }) {
-  const totalPct = (row.count / max) * 100;
-  const resolvedPct = (row.resolvedCount / max) * 100;
-  const ratePct = (row.resolutionRate * 100).toFixed(0);
+  const otherCount = Math.max(0, row.count - row.resolvedCount - row.unresolvedCount);
+  const scale = (row.count / max) * 100; // bar length vs the busiest category
+  const seg = (n: number) => (row.count > 0 ? (n / row.count) * scale : 0);
 
   return (
     <li>
@@ -121,25 +123,38 @@ function CategoryRowItem({
             />
             <span className="truncate">{row.categoryName}</span>
           </span>
-          <span className="shrink-0 text-[11px] uppercase tracking-wide text-slate-500">
-            <span className="tabular-nums text-slate-700">{ratePct}%</span> resolved
+          {/* Explicit resolved vs unresolved counts so the split reads at a glance. */}
+          <span className="shrink-0 text-[11px] tabular-nums">
+            <span className="font-semibold text-emerald-700">{formatNumber(row.resolvedCount)}</span>
+            <span className="text-slate-400"> · </span>
+            <span className="font-semibold text-amber-700">{formatNumber(row.unresolvedCount)}</span>
+            <span className="text-slate-400"> / {formatNumber(row.count)}</span>
           </span>
         </div>
         <div className="mt-2 flex items-center gap-2">
-          {/* Stacked bar: full slate width for total, sky overlay for resolved count. */}
+          {/* Tri-segment bar: resolved (green) | unresolved (amber) | other (slate). */}
           <div className="relative h-3 flex-1 overflow-hidden rounded-full bg-slate-100">
             <span
-              className="absolute inset-y-0 left-0 rounded-full"
-              style={{ width: `${totalPct}%`, backgroundColor: COLOR_TOTAL }}
+              className="absolute inset-y-0 left-0 rounded-l-full"
+              style={{ width: `${seg(row.resolvedCount)}%`, backgroundColor: COLOR_RESOLVED }}
             />
             <span
-              className="absolute inset-y-0 left-0 rounded-full"
-              style={{ width: `${resolvedPct}%`, backgroundColor: COLOR_RESOLVED }}
+              className="absolute inset-y-0"
+              style={{
+                left: `${seg(row.resolvedCount)}%`,
+                width: `${seg(row.unresolvedCount)}%`,
+                backgroundColor: COLOR_UNRESOLVED,
+              }}
+            />
+            <span
+              className="absolute inset-y-0"
+              style={{
+                left: `${seg(row.resolvedCount) + seg(row.unresolvedCount)}%`,
+                width: `${seg(otherCount)}%`,
+                backgroundColor: COLOR_OTHER,
+              }}
             />
           </div>
-          <span className="w-20 shrink-0 text-right text-[11px] tabular-nums text-slate-700">
-            {formatNumber(row.resolvedCount)} / {formatNumber(row.count)}
-          </span>
         </div>
       </button>
 
@@ -160,7 +175,8 @@ function CategoryDrill({ row }: { row: CategoryRow }) {
       {row.monthly.length > 0 ? (
         <div>
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            Monthly — total vs resolved
+            Monthly — <span className="text-emerald-700">resolved</span> ·{' '}
+            <span className="text-amber-700">unresolved</span> · other
           </div>
           <MonthlyMini monthly={row.monthly} />
         </div>
@@ -195,37 +211,74 @@ function CategoryDrill({ row }: { row: CategoryRow }) {
 function MonthlyMini({
   monthly,
 }: {
-  monthly: { month: string; count: number; resolvedCount: number }[];
+  monthly: { month: string; count: number; resolvedCount: number; unresolvedCount: number }[];
 }) {
   const max = Math.max(1, ...monthly.map((m) => m.count));
   return (
     <ul className="space-y-2">
       {monthly.map((m) => {
-        const totalPct = (m.count / max) * 100;
-        const resolvedPct = (m.resolvedCount / max) * 100;
-        const ratePct = m.count > 0 ? ((m.resolvedCount / m.count) * 100).toFixed(0) : '0';
+        const otherCount = Math.max(0, m.count - m.resolvedCount - m.unresolvedCount);
+        const scale = (m.count / max) * 100;
+        const seg = (n: number) => (m.count > 0 ? (n / m.count) * scale : 0);
         return (
           <li key={m.month} className="space-y-1">
             <div className="flex items-baseline justify-between text-xs">
               <span className="text-slate-700">{formatMonthYear(m.month)}</span>
-              <span className="text-[11px] tabular-nums text-slate-700">
-                {formatNumber(m.resolvedCount)} / {formatNumber(m.count)} ({ratePct}%)
+              <span className="text-[11px] tabular-nums">
+                <span className="font-semibold text-emerald-700">{formatNumber(m.resolvedCount)}</span>
+                <span className="text-slate-400"> · </span>
+                <span className="font-semibold text-amber-700">{formatNumber(m.unresolvedCount)}</span>
+                <span className="text-slate-400"> / {formatNumber(m.count)}</span>
               </span>
             </div>
             <div className="relative h-2 overflow-hidden rounded-full bg-slate-100">
               <span
-                className="absolute inset-y-0 left-0 rounded-full"
-                style={{ width: `${totalPct}%`, backgroundColor: COLOR_TOTAL }}
+                className="absolute inset-y-0 left-0 rounded-l-full"
+                style={{ width: `${seg(m.resolvedCount)}%`, backgroundColor: COLOR_RESOLVED }}
               />
               <span
-                className="absolute inset-y-0 left-0 rounded-full"
-                style={{ width: `${resolvedPct}%`, backgroundColor: COLOR_RESOLVED }}
+                className="absolute inset-y-0"
+                style={{
+                  left: `${seg(m.resolvedCount)}%`,
+                  width: `${seg(m.unresolvedCount)}%`,
+                  backgroundColor: COLOR_UNRESOLVED,
+                }}
+              />
+              <span
+                className="absolute inset-y-0"
+                style={{
+                  left: `${seg(m.resolvedCount) + seg(m.unresolvedCount)}%`,
+                  width: `${seg(otherCount)}%`,
+                  backgroundColor: COLOR_OTHER,
+                }}
               />
             </div>
           </li>
         );
       })}
     </ul>
+  );
+}
+
+function CatLegend() {
+  const items: Array<{ label: string; color: string }> = [
+    { label: 'Resolved', color: COLOR_RESOLVED },
+    { label: 'Unresolved', color: COLOR_UNRESOLVED },
+    { label: 'Other', color: COLOR_OTHER },
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+      {items.map((i) => (
+        <span key={i.label} className="inline-flex items-center gap-1">
+          <span
+            aria-hidden
+            className="inline-block h-2 w-2.5 rounded-sm"
+            style={{ backgroundColor: i.color }}
+          />
+          <span>{i.label}</span>
+        </span>
+      ))}
+    </div>
   );
 }
 

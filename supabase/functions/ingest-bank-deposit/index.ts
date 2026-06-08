@@ -51,12 +51,16 @@ import {
 } from '../_shared/canonicalLookup.ts';
 import { QUALITY_FLAGS, type QualityFlags } from '../_shared/quality_flags.ts';
 import { handlePreflight, jsonResponse } from '../_shared/cors.ts';
+import { discoverYearTabs } from '../_shared/yearTabs.ts';
 
 const SOURCE_SHEET = 'bank_deposit_mirror';
-const SOURCE_TAB = '2026 LAND';
-// Read columns A:M. We discard L/M (out of scope) but reading them keeps the
-// `raw_row` jsonb a faithful traceback record of what was on the sheet.
-const READ_RANGE = `${SOURCE_TAB}!A2:M`;
+// Year-agnostic discovery — picks up "2027 LAND" automatically when the
+// supervisor adds it to the same Bank Deposit Mirror spreadsheet (carryover
+// fix 2026-06-04). This is the financial source of truth, so it MUST carry
+// over. Read columns A:M; we discard L/M (out of scope) but reading them keeps
+// the `raw_row` jsonb a faithful traceback record of what was on the sheet.
+const TAB_PATTERN = /^(\d{4}) LAND$/;
+const READ_RANGE_SUFFIX = 'A2:M';
 
 // Named column constants (0-indexed within each row array from the API).
 // Matches the header row inspected 2026-05-11:
@@ -138,6 +142,7 @@ function parseRow(
   dateFallbackToA: unknown,
   futureThreshold: string,
   lookups: { locationByAlias: Map<string, string>; purposeByAlias: Map<string, string> },
+  sourceTab: string,
 ): ParsedRow | null {
   // Skip totally blank rows (rare but happen in spreadsheets).
   if (!row.some((cell) => cell !== '' && cell !== null && cell !== undefined)) {
@@ -179,7 +184,7 @@ function parseRow(
 
   return {
     source_sheet: SOURCE_SHEET,
-    source_tab: SOURCE_TAB,
+    source_tab: sourceTab,
     source_row_id,
     raw_row,
     quality_flags: flags,
@@ -213,8 +218,10 @@ Deno.serve(async (req) => {
       loadCanonicalLookups(supabase),
     ]);
 
-    const sheetData = await readSheetValues(accessToken, spreadsheetId, READ_RANGE);
-    const rawRows = sheetData.values ?? [];
+    const yearTabs = await discoverYearTabs(accessToken, spreadsheetId, TAB_PATTERN);
+    if (yearTabs.length === 0) {
+      throw new Error('No "<year> LAND" tab found (expected e.g. "2026 LAND").');
+    }
 
     // Future-date threshold: ingest UTC date + 1 day of grace. The grace absorbs
     // the Lagos (UTC+1) timezone boundary so a legitimately same-day entry near
@@ -224,88 +231,108 @@ Deno.serve(async (req) => {
       .toISOString()
       .slice(0, 10);
 
-    // Date strategy on 2026 LAND:
-    //   * Primary: column L (supervisor's clean working ledger).
-    //   * Tail fallback: column A is consulted ONLY for rows AFTER the last
-    //     non-blank L row. That section is the supervisor's L lag (he hasn't
-    //     filled L for the latest bank entries yet). Within L's covered range
-    //     we keep the forward-fill convention — using A there would expose us
-    //     to M/D/Y typos like serial 46238 (Aug 4) that should really be Apr 4.
-    //   * Empty both (and inside L's coverage) → forward-fill from L.
-    //   * Non-empty but unparseable → flagged + NOT forward-filled.
-    let lastLNonBlankRow = -1;
-    for (let i = 0; i < rawRows.length; i++) {
-      const v = (rawRows[i] ?? [])[COL.DATE];
-      if (v !== '' && v !== null && v !== undefined) lastLNonBlankRow = i;
-    }
-
     const parsed: ParsedRow[] = [];
+    let rowsRead = 0;
     let blankSkipped = 0;
     let fallbackRowIdCount = 0;
     let forwardFilledDateCount = 0;
     let dateFallbackCount = 0;
-    let lastValidDate: string | null = null;
-    for (let i = 0; i < rawRows.length; i++) {
-      const sheetRowNumber = i + 2; // range starts at A2
-      const row = rawRows[i] ?? [];
-      const rawL = row[COL.DATE];
-      const rawA = row[COL.DATE_A];
-      const lEmpty = rawL === '' || rawL === undefined || rawL === null;
-      const aEmpty = rawA === '' || rawA === undefined || rawA === null;
-      const inLTail = i > lastLNonBlankRow;
-
-      let txn_date: string | null;
-      let dateUnparseable = false;
-      let dateFallbackToA: unknown = null;
-
-      if (!lEmpty) {
-        txn_date = parseSheetDate(rawL);
-        if (txn_date === null) dateUnparseable = true;
-        else lastValidDate = txn_date;
-      } else if (inLTail && !aEmpty) {
-        // We're past the last L-filled row AND this row has a column-A date.
-        // Supervisor hasn't backfilled L yet for this entry.
-        txn_date = parseSheetDate(rawA);
-        if (txn_date === null) {
-          dateUnparseable = true;
-        } else {
-          lastValidDate = txn_date;
-          dateFallbackToA = rawA;
-          dateFallbackCount++;
-        }
-      } else {
-        // L blank inside L's coverage (or both blank in the tail) → forward-fill.
-        txn_date = lastValidDate;
-        if (txn_date !== null) forwardFilledDateCount++;
-      }
-
-      const parsedRow = parseRow(row, sheetRowNumber, txn_date, dateUnparseable, dateFallbackToA, graceIso, lookups);
-      if (!parsedRow) {
-        blankSkipped++;
-        continue;
-      }
-      if (parsedRow.source_row_id.startsWith('row-')) fallbackRowIdCount++;
-      // Stash the sheet row number for the dedup pass below.
-      (parsedRow as ParsedRow & { _sheetRow: number })._sheetRow = sheetRowNumber;
-      parsed.push(parsedRow);
-    }
-
-    // Defend against duplicate TRANS CODE entries on the sheet: without this,
-    // two rows sharing one code would collide on the (source_sheet, source_tab,
-    // source_row_id) unique key and the second upsert would silently overwrite
-    // the first. First occurrence keeps the natural id; subsequent occurrences
-    // get `{id}-row{sheetRow}` appended, which is stable across re-ingests as
-    // long as rows aren't reordered.
-    const seenIds = new Set<string>();
     const duplicateTransCodes: string[] = [];
-    for (const r of parsed) {
-      if (seenIds.has(r.source_row_id)) {
-        duplicateTransCodes.push(r.source_row_id);
-        const sheetRow = (r as ParsedRow & { _sheetRow: number })._sheetRow;
-        r.source_row_id = `${r.source_row_id}-row${sheetRow}`;
+
+    // One pass per year tab (e.g. "2026 LAND", "2027 LAND"). The L-tail date
+    // logic, forward-fill, and TRANS-CODE dedup are all per-tab: a new year's
+    // ledger starts its own date sequence and its own row numbering, and the
+    // (sheet, tab, row_id) unique key keeps tabs from colliding.
+    for (const { tab: sourceTab } of yearTabs) {
+      const sheetData = await readSheetValues(
+        accessToken,
+        spreadsheetId,
+        `${sourceTab}!${READ_RANGE_SUFFIX}`,
+      );
+      const rawRows = sheetData.values ?? [];
+      rowsRead += rawRows.length;
+
+      // Date strategy on a LAND tab:
+      //   * Primary: column L (supervisor's clean working ledger).
+      //   * Tail fallback: column A is consulted ONLY for rows AFTER the last
+      //     non-blank L row. That section is the supervisor's L lag (he hasn't
+      //     filled L for the latest bank entries yet). Within L's covered range
+      //     we keep the forward-fill convention — using A there would expose us
+      //     to M/D/Y typos like serial 46238 (Aug 4) that should really be Apr 4.
+      //   * Empty both (and inside L's coverage) → forward-fill from L.
+      //   * Non-empty but unparseable → flagged + NOT forward-filled.
+      let lastLNonBlankRow = -1;
+      for (let i = 0; i < rawRows.length; i++) {
+        const v = (rawRows[i] ?? [])[COL.DATE];
+        if (v !== '' && v !== null && v !== undefined) lastLNonBlankRow = i;
       }
-      seenIds.add(r.source_row_id);
-      delete (r as Partial<ParsedRow & { _sheetRow: number }>)._sheetRow;
+
+      const tabParsed: ParsedRow[] = [];
+      let lastValidDate: string | null = null;
+      for (let i = 0; i < rawRows.length; i++) {
+        const sheetRowNumber = i + 2; // range starts at A2
+        const row = rawRows[i] ?? [];
+        const rawL = row[COL.DATE];
+        const rawA = row[COL.DATE_A];
+        const lEmpty = rawL === '' || rawL === undefined || rawL === null;
+        const aEmpty = rawA === '' || rawA === undefined || rawA === null;
+        const inLTail = i > lastLNonBlankRow;
+
+        let txn_date: string | null;
+        let dateUnparseable = false;
+        let dateFallbackToA: unknown = null;
+
+        if (!lEmpty) {
+          txn_date = parseSheetDate(rawL);
+          if (txn_date === null) dateUnparseable = true;
+          else lastValidDate = txn_date;
+        } else if (inLTail && !aEmpty) {
+          // We're past the last L-filled row AND this row has a column-A date.
+          // Supervisor hasn't backfilled L yet for this entry.
+          txn_date = parseSheetDate(rawA);
+          if (txn_date === null) {
+            dateUnparseable = true;
+          } else {
+            lastValidDate = txn_date;
+            dateFallbackToA = rawA;
+            dateFallbackCount++;
+          }
+        } else {
+          // L blank inside L's coverage (or both blank in the tail) → forward-fill.
+          txn_date = lastValidDate;
+          if (txn_date !== null) forwardFilledDateCount++;
+        }
+
+        const parsedRow = parseRow(row, sheetRowNumber, txn_date, dateUnparseable, dateFallbackToA, graceIso, lookups, sourceTab);
+        if (!parsedRow) {
+          blankSkipped++;
+          continue;
+        }
+        if (parsedRow.source_row_id.startsWith('row-')) fallbackRowIdCount++;
+        // Stash the sheet row number for the dedup pass below.
+        (parsedRow as ParsedRow & { _sheetRow: number })._sheetRow = sheetRowNumber;
+        tabParsed.push(parsedRow);
+      }
+
+      // Defend against duplicate TRANS CODE entries on the sheet: without this,
+      // two rows sharing one code would collide on the (source_sheet, source_tab,
+      // source_row_id) unique key and the second upsert would silently overwrite
+      // the first. First occurrence keeps the natural id; subsequent occurrences
+      // get `{id}-row{sheetRow}` appended, which is stable across re-ingests as
+      // long as rows aren't reordered. Dedup is per-tab — the same code can
+      // legitimately recur across different years' tabs.
+      const seenIds = new Set<string>();
+      for (const r of tabParsed) {
+        if (seenIds.has(r.source_row_id)) {
+          duplicateTransCodes.push(r.source_row_id);
+          const sheetRow = (r as ParsedRow & { _sheetRow: number })._sheetRow;
+          r.source_row_id = `${r.source_row_id}-row${sheetRow}`;
+        }
+        seenIds.add(r.source_row_id);
+        delete (r as Partial<ParsedRow & { _sheetRow: number }>)._sheetRow;
+      }
+
+      parsed.push(...tabParsed);
     }
 
     // Upsert in chunks. supabase-js handles arrays fine, but very large batches
@@ -362,7 +389,7 @@ Deno.serve(async (req) => {
           threshold: graceIso,
           count: futureRows.length,
           source_sheet: SOURCE_SHEET,
-          source_tab: SOURCE_TAB,
+          source_tab: yearTabs.map((t) => t.tab).join(', '),
           rows: futureRows.slice(0, 25).map((r) => ({
             source_row_id: r.source_row_id,
             txn_date: r.txn_date,
@@ -380,8 +407,8 @@ Deno.serve(async (req) => {
       ok: true,
       startedAt,
       finishedAt: new Date().toISOString(),
-      source: { sheet: SOURCE_SHEET, tab: SOURCE_TAB, range: READ_RANGE },
-      rowsRead: rawRows.length,
+      source: { sheet: SOURCE_SHEET, tabs: yearTabs.map((t) => t.tab) },
+      rowsRead,
       rowsUpserted: upserted,
       blankSkipped,
       fallbackRowIdCount,

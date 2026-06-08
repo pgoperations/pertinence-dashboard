@@ -62,27 +62,31 @@ import {
 } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import {
   getSheetsAccessToken,
+  getSheetTabs,
   parseSheetDate,
   readSheetValues,
 } from '../_shared/sheetsAuth.ts';
 import {
   loadActiveCustomerServiceReps,
   loadComplaintAliases,
+  loadCsBrandByEmailDomain,
   lookupCanonical,
   type CsRepLookup,
 } from '../_shared/canonicalLookup.ts';
 import {
   COL,
+  isRepTabHeader,
+  NON_REP_TABS,
   RAW_ROW_KEYS,
-  REP_TABS,
   splitComposite,
-  type RepTab,
 } from '../_shared/parseCustomerSupport.ts';
 import { QUALITY_FLAGS, type QualityFlags } from '../_shared/quality_flags.ts';
 import { handlePreflight, jsonResponse } from '../_shared/cors.ts';
 
 const SOURCE_SHEET = 'customer_support_master';
-const READ_RANGE_SUFFIX = 'A2:N';
+// Read includes the header row (row 1) so we can validate each discovered tab
+// matches the complaint-log template before parsing it by fixed column index.
+const READ_RANGE_SUFFIX = 'A1:N';
 
 type ParsedRow = {
   source_sheet: string;
@@ -120,7 +124,7 @@ function trimOrNull(v: unknown): string | null {
 }
 
 function parseTab(
-  tabName: RepTab,
+  tabName: string,
   rep: CsRepLookup,
   rows: unknown[][],
   complaintAliases: Map<string, string>,
@@ -140,14 +144,17 @@ function parseTab(
     const row = rows[i] ?? [];
     const sheetRowNumber = i + 2; // range starts at row 2
 
-    // A complaint row needs at least one of the three CS signals to be
-    // considered populated. Rows containing only special-task data (cols
-    // O–AC, which we don't read) appear blank here and are correctly
-    // skipped.
     const natureCell = trimOrNull(row[COL.NATURE_OF_COMPLAINT]);
     const channelCell = trimOrNull(row[COL.CHANNEL]);
     const statusCell = trimOrNull(row[COL.STATUS_OF_COMPLAINT]);
-    if (!natureCell && !channelCell && !statusCell) {
+    const dateRaw = row[COL.DATE];
+    const datePresent = dateRaw !== '' && dateRaw !== undefined && dateRaw !== null;
+    // Keep a row if it logged any CS signal OR carries a date. The CX portal
+    // (code.gs getLeaderboardData) counts every dated row as a ticket — a
+    // blank-status dated row lands in "Other". Only a row with no signal AND no
+    // date is truly empty (e.g. a row holding only special-task data in cols
+    // O–AC, which we don't read).
+    if (!natureCell && !channelCell && !statusCell && !datePresent) {
       stats.blankSkipped++;
       continue;
     }
@@ -233,42 +240,99 @@ Deno.serve(async (req) => {
     const spreadsheetId = Deno.env.get('SHEET_ID_CUSTOMER_SUPPORT');
     if (!spreadsheetId) throw new Error('Missing env: SHEET_ID_CUSTOMER_SUPPORT');
 
-    const [accessToken, complaintAliases, reps] = await Promise.all([
+    const [accessToken, complaintAliases, reps, brandByDomain] = await Promise.all([
       getSheetsAccessToken(),
       loadComplaintAliases(supabase),
       loadActiveCustomerServiceReps(supabase),
+      loadCsBrandByEmailDomain(supabase),
     ]);
 
-    // Resolve each tab to its rep_id up-front; bail with a clear error if any
-    // tab has no matching rep (would fail FK insert otherwise).
-    const tabToRep = new Map<RepTab, CsRepLookup>();
-    const missing: string[] = [];
-    for (const tab of REP_TABS) {
-      const rep = reps.get(tab.toLowerCase());
-      if (!rep) missing.push(tab);
-      else tabToRep.set(tab, rep);
+    // Discover rep tabs dynamically (2026-06-05) so a newly-added rep tab is
+    // ingested with no code change. A candidate is any tab NOT on the non-rep
+    // list; the header check below confirms it matches the complaint-log
+    // template before we parse it by fixed column index.
+    const allTabs = await getSheetTabs(accessToken, spreadsheetId);
+    const candidateTabs = allTabs
+      .map((t) => t.title)
+      .filter((title) => !NON_REP_TABS.has(title.trim().toLowerCase()));
+
+    // Staff_Reference: name (col A) → email (col B). Used to infer a newly-
+    // discovered rep's brand from their email domain (seeded brands carry
+    // email_domain). Best-effort: a read failure just disables auto-create.
+    const staffByName = new Map<string, { email: string; displayName: string }>();
+    try {
+      const staff = await readSheetValues(accessToken, spreadsheetId, 'Staff_Reference!A2:B');
+      for (const sr of staff.values ?? []) {
+        const name = typeof sr[0] === 'string' ? sr[0].trim() : '';
+        const email = typeof sr[1] === 'string' ? sr[1].trim() : '';
+        if (name) staffByName.set(name.toLowerCase(), { email, displayName: name });
+      }
+    } catch (e) {
+      console.warn('Staff_Reference read failed; new-rep auto-create disabled:', e);
     }
-    if (missing.length) {
-      throw new Error(
-        `No active customer_service_reps row matches tab names: ${missing.join(', ')}. ` +
-          `Check the seed in migration 002 or the rep's active=true flag.`,
-      );
+
+    // Mutable rep lookup (lower(name) → { id, brand_id }); grows as we auto-
+    // create newly-discovered reps.
+    const repByName = new Map<string, CsRepLookup>(reps);
+    const skippedTabs: string[] = []; // tab present but not a complaint-log template
+    const unmappedReps: string[] = []; // rep tab with no resolvable brand → not ingested
+    const newReps: string[] = []; // auto-created this run
+
+    async function resolveRep(tabName: string): Promise<CsRepLookup | null> {
+      const key = tabName.trim().toLowerCase();
+      const existing = repByName.get(key);
+      if (existing) return existing;
+      // Unknown rep — infer brand from their Staff_Reference email domain.
+      const staff = staffByName.get(key);
+      const email = staff?.email ?? '';
+      const at = email.indexOf('@');
+      const domain = at >= 0 ? email.slice(at + 1).toLowerCase().trim() : '';
+      const brandId = domain ? brandByDomain.get(domain) ?? null : null;
+      if (!brandId) return null; // can't satisfy NOT NULL brand_id — caller warns
+      const displayName = staff?.displayName ?? tabName.trim();
+      const { data: inserted, error: insErr } = await supabase
+        .from('customer_service_reps')
+        .upsert({ name: displayName, brand_id: brandId, active: true }, { onConflict: 'name' })
+        .select('id, brand_id')
+        .single();
+      if (insErr || !inserted) {
+        console.error(`auto-create rep "${displayName}" failed:`, insErr?.message);
+        return null;
+      }
+      const rec: CsRepLookup = { id: inserted.id as string, brand_id: inserted.brand_id as string };
+      repByName.set(key, rec);
+      newReps.push(displayName);
+      return rec;
     }
 
     const allRows: ParsedRow[] = [];
     const tabStats: Record<string, TabStats> = {};
 
-    for (const tab of REP_TABS) {
+    for (const tab of candidateTabs) {
       const range = `${tab}!${READ_RANGE_SUFFIX}`;
       const data = await readSheetValues(accessToken, spreadsheetId, range);
-      const { parsed, stats } = parseTab(
-        tab,
-        tabToRep.get(tab)!,
-        data.values ?? [],
-        complaintAliases,
-      );
+      const values = data.values ?? [];
+      if (values.length === 0 || !isRepTabHeader(values[0] ?? [])) {
+        skippedTabs.push(tab);
+        continue;
+      }
+      const rep = await resolveRep(tab);
+      if (!rep) {
+        unmappedReps.push(tab);
+        continue;
+      }
+      // values[0] is the header row; data rows start at sheet row 2.
+      const { parsed, stats } = parseTab(tab, rep, values.slice(1), complaintAliases);
       allRows.push(...parsed);
       tabStats[tab] = stats;
+    }
+
+    if (Object.keys(tabStats).length === 0) {
+      throw new Error(
+        `No rep complaint-log tabs ingested. Candidates: ${candidateTabs.join(', ') || '(none)'}; ` +
+          `skipped (not template): ${skippedTabs.join(', ') || '(none)'}; ` +
+          `unmapped brand: ${unmappedReps.join(', ') || '(none)'}.`,
+      );
     }
 
     // Upsert in chunks. With 10k+ logical rows across 5 reps + composite
@@ -301,7 +365,11 @@ Deno.serve(async (req) => {
       startedAt,
       finishedAt: new Date().toISOString(),
       source: { sheet: SOURCE_SHEET },
-      tabsIngested: REP_TABS.length,
+      tabsIngested: Object.keys(tabStats).length,
+      repTabs: Object.keys(tabStats),
+      newReps,
+      skippedTabs,
+      unmappedReps,
       tabStats,
       rowsUpserted: upserted,
       flagCounts,

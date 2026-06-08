@@ -50,12 +50,43 @@ export const RAW_ROW_KEYS = [
   'Status of Complaint',
 ] as const;
 
-// The 5 active reps per Rep_ID tab inspection (2026-05-14). Tab names on the
-// source sheet are uppercase; the seeded customer_service_reps.name values
-// are mixed-case ("Catherine"). The ingest does a lower-case lookup so the
-// case difference is handled.
+// The originally-seeded 5 active reps (2026-05-14). Kept for reference; the
+// ingest no longer iterates this list — it DISCOVERS rep tabs dynamically so a
+// newly-added rep tab is picked up without a code change (2026-06-05). Tab
+// names on the source sheet are uppercase; seeded customer_service_reps.name
+// values are mixed-case ("Catherine"), resolved via a lower-case lookup.
 export const REP_TABS = ['CATHERINE', 'MARIAM', 'MARY', 'YETUNDE', 'LOVINAL'] as const;
 export type RepTab = (typeof REP_TABS)[number];
+
+// Tabs in the Customer Support master spreadsheet that are NOT rep complaint
+// logs. Mirrors the Apps Script portal's EXCLUDED_SHEETS plus the other known
+// non-rep tabs. Compared case-insensitively against the trimmed tab name.
+// ABIDEMI / VICTORIA are inactive reps — excluded exactly as the portal does.
+export const NON_REP_TABS = new Set(
+  [
+    'Staff_Reference',
+    'Rep ID',
+    'Rep_ID',
+    'ABIDEMI',
+    'VICTORIA',
+    'New Customer File',
+    '_Categories',
+  ].map((s) => s.toLowerCase()),
+);
+
+function normHeader(h: unknown): string {
+  return (h == null ? '' : String(h)).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+// A tab is a rep complaint log if its header row carries Date + Status-of-
+// Complaint columns at the fixed template positions we parse by index. New rep
+// tabs follow the same template, so this validates the layout AND screens out
+// any stray non-rep tab the exclusion list missed.
+export function isRepTabHeader(headerRow: unknown[]): boolean {
+  const date = normHeader(headerRow[COL.DATE]);
+  const status = normHeader(headerRow[COL.STATUS_OF_COMPLAINT]);
+  return date.includes('date') && status.includes('status');
+}
 
 // Quote-aware comma splitter for the "Nature of Complaint" cell.
 //

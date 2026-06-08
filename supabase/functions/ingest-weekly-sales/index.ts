@@ -37,12 +37,15 @@ import {
 } from '../_shared/parsePlotType.ts';
 import { QUALITY_FLAGS, type QualityFlags } from '../_shared/quality_flags.ts';
 import { handlePreflight, jsonResponse } from '../_shared/cors.ts';
+import { discoverYearTabs } from '../_shared/yearTabs.ts';
 
 const SOURCE_SHEET = 'bank_deposit_mirror';
-const SOURCE_TAB = '2026 Weekly Sales Report';
-// Read columns A:H. Col A is empty by convention on this tab; we still read
-// the full 8-col span so `raw_row` is a faithful traceback record.
-const READ_RANGE = `${SOURCE_TAB}!A2:H`;
+// Year-agnostic discovery — picks up "2027 Weekly Sales Report" automatically
+// when the supervisor adds it to the same spreadsheet (carryover fix
+// 2026-06-04). Read columns A:H; col A is empty by convention on this tab but
+// we still read the full 8-col span so `raw_row` is a faithful traceback.
+const TAB_PATTERN = /^(\d{4}) Weekly Sales Report$/;
+const READ_RANGE_SUFFIX = 'A2:H';
 
 // Named column constants (0-indexed within each row array from the API).
 // Header inspected 2026-05-18: ['', NAMES, LOCATION, PLOT TYPE, AMOUNT, INITIAL, DATE, SALES PERSON]
@@ -141,13 +144,28 @@ Deno.serve(async (req) => {
       loadPlotTypeLookup(supabase),
     ]);
 
-    const sheetData = await readSheetValues(accessToken, spreadsheetId, READ_RANGE);
-    const rawRows = sheetData.values ?? [];
+    const yearTabs = await discoverYearTabs(accessToken, spreadsheetId, TAB_PATTERN);
+    if (yearTabs.length === 0) {
+      throw new Error(
+        'No "<year> Weekly Sales Report" tab found (expected e.g. "2026 Weekly Sales Report").',
+      );
+    }
 
     const parsed: ParsedRow[] = [];
+    let rowsRead = 0;
     let blankSkipped = 0;
     let dateMarkerSkipped = 0;
-    for (let i = 0; i < rawRows.length; i++) {
+    // One pass per year tab. source_row_id (`row-{N}`) resets per tab, but
+    // source_tab differs per tab so the (sheet, tab, row_id) key stays unique.
+    for (const { tab: sourceTab } of yearTabs) {
+     const sheetData = await readSheetValues(
+       accessToken,
+       spreadsheetId,
+       `${sourceTab}!${READ_RANGE_SUFFIX}`,
+     );
+     const rawRows = sheetData.values ?? [];
+     rowsRead += rawRows.length;
+     for (let i = 0; i < rawRows.length; i++) {
       const sheetRowNumber = i + 2; // range starts at A2
       const row = rawRows[i] ?? [];
 
@@ -208,7 +226,7 @@ Deno.serve(async (req) => {
 
       parsed.push({
         source_sheet: SOURCE_SHEET,
-        source_tab: SOURCE_TAB,
+        source_tab: sourceTab,
         source_row_id: `row-${sheetRowNumber}`,
         raw_row,
         quality_flags: flags,
@@ -222,6 +240,7 @@ Deno.serve(async (req) => {
         plot_count,
         realtor_manager_id: null, // Weekly Sales has no realtor-manager column
       });
+     }
     }
 
     // Chunked upsert. ~50 rows YTD fit in one chunk easily.
@@ -252,8 +271,8 @@ Deno.serve(async (req) => {
       ok: true,
       startedAt,
       finishedAt: new Date().toISOString(),
-      source: { sheet: SOURCE_SHEET, tab: SOURCE_TAB, range: READ_RANGE },
-      rowsRead: rawRows.length,
+      source: { sheet: SOURCE_SHEET, tabs: yearTabs.map((t) => t.tab) },
+      rowsRead,
       rowsUpserted: upserted,
       blankSkipped,
       dateMarkerSkipped,

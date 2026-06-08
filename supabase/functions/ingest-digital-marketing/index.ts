@@ -35,16 +35,26 @@ import { handlePreflight, jsonResponse } from '../_shared/cors.ts';
 const SOURCE_SHEET = 'marketing_team_reporting_template';
 const SOURCE_TAB = 'Digital Marketing';
 
-// Year-section list. Adding 2027 next year is a code change here on purpose:
-// the supervisor confirms which year is in-scope before any ingest runs.
-const YEARS_TO_INGEST: number[] = [2026];
+// Year-section list — 2026 forward, computed so a 2027 section added below the
+// 2026 block on the same tab is picked up automatically (carryover fix
+// 2026-06-04). parseDigitalMarketingTab locates each year by its in-sheet
+// year-marker cell, so a year with no section simply yields zero rows. Upper
+// bound is current UTC year + 1.
+const FIRST_INGEST_YEAR = 2026;
+const YEARS_TO_INGEST: number[] = (() => {
+  const maxYear = new Date().getUTCFullYear() + 1;
+  const out: number[] = [];
+  for (let y = FIRST_INGEST_YEAR; y <= maxYear; y++) out.push(y);
+  return out;
+})();
 
-// 2026 section begins at sheet row 129 with the year-marker cell. We read
-// from row 100 down to give the year-marker scanner a comfortable window
-// and to absorb any future supervisor-added rows above the marker. The tab
-// is 106 cols wide (col DB is index 105); read all of them so future
-// supervisor additions to the right of column AL also flow through.
-const READ_RANGE = `${SOURCE_TAB}!A100:DB500`;
+// 2026 section begins at sheet row 129 with the year-marker cell. We read from
+// row 100 down to give the year-marker scanner a comfortable window. The window
+// extends to row 1500 so a 2027 section added BELOW the 2026 block is still in
+// range (carryover fix 2026-06-04). The tab is 106 cols wide (col DB is index
+// 105); read all of them so future supervisor additions to the right also flow
+// through.
+const READ_RANGE = `${SOURCE_TAB}!A100:DB1500`;
 
 Deno.serve(async (req) => {
   const preflight = handlePreflight(req);

@@ -5,7 +5,7 @@ import { NarrativeCard } from '../components/NarrativeCard';
 import { buildCustomerSupportNarrative } from '../lib/narrative';
 import { BrandToggle } from '../components/customer-support/BrandToggle';
 import { CsKpiStrip } from '../components/customer-support/CsKpiStrip';
-import { EnquiriesByChannel } from '../components/customer-support/EnquiriesByChannel';
+import { RepPerformance } from '../components/customer-support/RepPerformance';
 import { ComplaintsByCategory } from '../components/customer-support/ComplaintsByCategory';
 import { CsMonthlyTrend } from '../components/customer-support/CsMonthlyTrend';
 import { useDateRange } from '../hooks/useDateRange';
@@ -45,19 +45,17 @@ export default function CustomerSupportPage() {
 
   const kpis = data?.kpis ?? {
     totalLogs: 0,
-    enquiries: 0,
-    complaints: 0,
-    resolvedComplaints: 0,
+    resolved: 0,
+    unresolved: 0,
     resolutionRate: 0,
   };
   const kpiBreakdowns = data?.kpiBreakdowns ?? {
     totalLogs: [],
-    enquiries: [],
-    complaints: [],
-    resolvedComplaints: [],
+    resolved: [],
+    unresolved: [],
     resolutionRate: [],
   };
-  const byChannel = data?.byChannel ?? [];
+  const byRep = data?.byRep ?? [];
   const byCategory = data?.byCategory ?? [];
   const monthly = data?.monthly ?? [];
   const sources = data?.sources ?? { logsUpdatedAt: null };
@@ -100,7 +98,7 @@ export default function CustomerSupportPage() {
 
         <NarrativeCard narrative={narrative} loading={loading} />
 
-        <EnquiriesByChannel rows={byChannel} loading={loading} />
+        <RepPerformance rows={byRep} showBrand={brand === 'all'} loading={loading} />
 
         <ComplaintsByCategory rows={byCategory} loading={loading} />
 

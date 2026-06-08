@@ -188,3 +188,23 @@ export async function loadActiveCustomerServiceReps(
   }
   return map;
 }
+
+// Map lower(email_domain) → brand.id for the CS brands (is_cs). Used to infer a
+// newly-discovered rep's brand from their Staff_Reference email domain so the
+// rep can be auto-created (customer_service_reps.brand_id is NOT NULL).
+export async function loadCsBrandByEmailDomain(
+  supabase: SupabaseClient,
+): Promise<Map<string, string>> {
+  const { data, error } = await supabase
+    .from('brands')
+    .select('id, email_domain, is_cs')
+    .eq('is_cs', true);
+  if (error) throw new Error(`brands load failed: ${error.message}`);
+  const map = new Map<string, string>();
+  for (const row of data ?? []) {
+    if (row.email_domain && row.id) {
+      map.set(String(row.email_domain).toLowerCase().trim(), row.id as string);
+    }
+  }
+  return map;
+}

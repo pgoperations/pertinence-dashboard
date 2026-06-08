@@ -1,4 +1,4 @@
-import { formatNumber } from '../format';
+import { formatNumber, formatPersonName } from '../format';
 import type { BrandFilter, CsPanelData } from '../queries/customerSupport';
 import type { DateRange } from '../../types/date-range';
 import type { NarrativePoint, SectionNarrative } from './types';
@@ -14,7 +14,7 @@ export function buildCustomerSupportNarrative(
   data: CsPanelData,
   range: DateRange,
 ): SectionNarrative {
-  const { kpis, byChannel, byCategory, appliedBrand } = data;
+  const { kpis, byRep, byCategory, appliedBrand } = data;
   const asOf = mostRecent(data.sources.logsUpdatedAt);
   const brandLabel = BRAND_LABEL[appliedBrand];
 
@@ -23,24 +23,24 @@ export function buildCustomerSupportNarrative(
   }
 
   const headline =
-    `${formatNumber(kpis.totalLogs)} support ${plural(kpis.totalLogs, 'log')} for ${brandLabel} ` +
-    `across ${rangeLabel(range)}: ${formatNumber(kpis.enquiries)} ${plural(kpis.enquiries, 'enquiry', 'enquiries')} ` +
-    `and ${formatNumber(kpis.complaints)} ${plural(kpis.complaints, 'complaint')}.`;
+    `${formatNumber(kpis.totalLogs)} customer ${plural(kpis.totalLogs, 'log')} for ${brandLabel} ` +
+    `across ${rangeLabel(range)}: ${formatNumber(kpis.resolved)} resolved, ` +
+    `${formatNumber(kpis.unresolved)} unresolved.`;
 
   const points: NarrativePoint[] = [];
 
-  if (kpis.complaints > 0) {
+  if (kpis.totalLogs > 0) {
     const rate = Math.round(kpis.resolutionRate * 100);
     points.push({
-      text: `${rate}% of complaints were resolved (${formatNumber(kpis.resolvedComplaints)} of ${formatNumber(kpis.complaints)}).`,
+      text: `${rate}% of logs were resolved (${formatNumber(kpis.resolved)} of ${formatNumber(kpis.totalLogs)}).`,
       tone: rate >= 70 ? 'positive' : rate >= 40 ? 'neutral' : 'caution',
     });
   }
 
-  const topChannel = byChannel[0];
-  if (topChannel && topChannel.count > 0) {
+  const topRep = byRep[0];
+  if (topRep && topRep.total > 0) {
     points.push({
-      text: `${topChannel.channel} was the busiest channel with ${formatNumber(topChannel.count)} ${plural(topChannel.count, 'log')}.`,
+      text: `${formatPersonName(topRep.name)} handled the most logs (${formatNumber(topRep.total)}, ${Math.round(topRep.resolutionRate * 100)}% resolved).`,
     });
   }
 
@@ -54,7 +54,18 @@ export function buildCustomerSupportNarrative(
   const caveats: NarrativePoint[] = [];
 
   caveats.push({
-    text: `"Resolved" counts only logs marked exactly Resolved — RESPONDED, PENDING and in-progress are excluded by design.`,
+    text: `Counts are tickets (one per sheet row), matching the CX portal. "Resolved" = status exactly Resolved or Responded; "Unresolved" = Pending or In Progress; composite/blank statuses count in the total only.`,
+    tone: 'caution',
+  });
+
+  if (byCategory.length > 0) {
+    caveats.push({
+      text: `Complaints by Category counts each complaint separately, so a ticket logging several complaints adds to multiple categories — those totals exceed the ticket count by design.`,
+    });
+  }
+
+  caveats.push({
+    text: `Brand is attributed by rep, not per customer — PPL = Catherine/Mariam/Mary, RealVest = Yetunde/Lovinal. The source sheet has no per-customer brand column.`,
     tone: 'caution',
   });
 

@@ -36,9 +36,15 @@ import { handlePreflight, jsonResponse } from '../_shared/cors.ts';
 const SOURCE_SHEET = 'marketing_team_reporting_template';
 const SOURCE_TAB = 'Media Team Reporting';
 
-// Year section list. Each entry tells the parser where its year's data
-// starts on the sheet (1-indexed sheet row). Adding 2027 is a one-line
-// supervisor-confirmed change here.
+// Year section list. Each entry tells the parser where its year's data starts
+// on the sheet (1-indexed sheet row).
+//
+// CARRYOVER NOTE (2026-06-04): unlike the other ingests, the Media tab is a
+// single grid where each year is a sub-region at a fixed row offset — there is
+// NO year-marker cell to scan for, so a 2027 section CANNOT be auto-discovered.
+// When the supervisor adds the 2027 weekly grid, add its start row here:
+//   { year: 2027, startRow: <row of the first 2027 month header>, endRow: <…> }
+// This is the only remaining manual step for 2027 carryover across all ingests.
 const YEAR_SECTIONS: Array<{ year: number; startRow: number; endRow: number }> = [
   // 2026 section starts at sheet row 676. End set to 1008 (sheet's row
   // count as of 2026-06-01) — generous upper bound; the parser stops

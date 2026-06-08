@@ -11,13 +11,15 @@ import {
 import { PanelCard } from '../PanelCard';
 import { BreakdownList, type BreakdownItem } from '../sales/BreakdownList';
 import { DrillPanel } from '../sales/DrillPanel';
-import { formatNumber, formatMonthShort, formatMonthYear } from '../../lib/format';
+import { formatNumber, formatMonthShort, formatMonthYear, formatPersonName } from '../../lib/format';
 import type { CsMonthBucket } from '../../lib/queries/customerSupport';
 
-const COLOR_ENQ = '#56B845';      // brand green (Pertinence) — enquiries
-const COLOR_COMP = '#334155';     // slate-700 — complaints unresolved
-const COLOR_RESOLVED = '#059669'; // emerald-600 — resolved (distinct hue → reads as positive outcome)
+const COLOR_RESOLVED = '#059669';   // emerald-600 — resolved + responded
+const COLOR_UNRESOLVED = '#D97706'; // amber-600 — pending + in progress
+const COLOR_OTHER = '#CBD5E1';      // slate-300 — no / other status
 const COLOR_GRID = '#E2E8F0';
+
+type TrendDatum = CsMonthBucket & { other: number };
 
 export function CsMonthlyTrend({
   monthly,
@@ -29,6 +31,10 @@ export function CsMonthlyTrend({
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
 
   const empty = !loading && monthly.length === 0;
+  const data: TrendDatum[] = monthly.map((m) => ({
+    ...m,
+    other: Math.max(0, m.total - m.resolved - m.unresolved),
+  }));
   const expandedRow = selectedMonth
     ? monthly.find((m) => m.month === selectedMonth) ?? null
     : null;
@@ -39,8 +45,8 @@ export function CsMonthlyTrend({
   return (
     <PanelCard
       title="Monthly trend"
-      subtitle="Enquiries (green) vs Complaints (slate) per month, with resolved overlay. Tap a bar or month chip for that month's breakdown."
-      source="Source: customer_support_logs. Enquiries = no complaint_category_id. Complaints = with category. Resolved is the strict-resolved subset of complaints."
+      subtitle="Resolved (green) vs Unresolved (amber) logs per month. Tap a bar or month chip for that month's breakdown."
+      source="Source: customer_support_logs by date of entry. Resolved = RESOLVED/RESPONDED; Unresolved = PENDING/IN PROGRESS; Other = blank or unrecognized status."
     >
       {empty ? (
         <div className="grid h-56 place-items-center rounded-lg bg-slate-50 text-sm text-slate-500">
@@ -51,7 +57,7 @@ export function CsMonthlyTrend({
           <div className="h-64 w-full md:h-80">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
-                data={monthly}
+                data={data}
                 margin={{ top: 16, right: 8, left: 0, bottom: 16 }}
                 barCategoryGap="20%"
               >
@@ -75,36 +81,35 @@ export function CsMonthlyTrend({
                 />
                 <Tooltip
                   content={<TrendTooltip />}
-                  cursor={{ fill: 'rgba(86,184,69,0.07)' }}
+                  cursor={{ fill: 'rgba(5,150,105,0.07)' }}
                 />
                 <Bar
-                  dataKey="enquiries"
-                  fill={COLOR_ENQ}
-                  name="Enquiries"
-                  radius={[4, 4, 0, 0]}
-                  onClick={(d: unknown) => {
-                    const month = (d as { payload?: { month?: string } })?.payload?.month;
-                    if (month) toggleMonth(month);
-                  }}
-                  style={{ cursor: 'pointer' }}
-                />
-                {/* Complaints bar — sits next to enquiries via default groupBy */}
-                <Bar
-                  dataKey="complaints"
-                  stackId="comp"
-                  fill={COLOR_COMP}
-                  name="Complaints (unresolved)"
-                  onClick={(d: unknown) => {
-                    const month = (d as { payload?: { month?: string } })?.payload?.month;
-                    if (month) toggleMonth(month);
-                  }}
-                  style={{ cursor: 'pointer' }}
-                />
-                <Bar
-                  dataKey="resolvedComplaints"
-                  stackId="comp"
+                  dataKey="resolved"
+                  stackId="logs"
                   fill={COLOR_RESOLVED}
-                  name="Complaints (resolved)"
+                  name="Resolved"
+                  onClick={(d: unknown) => {
+                    const month = (d as { payload?: { month?: string } })?.payload?.month;
+                    if (month) toggleMonth(month);
+                  }}
+                  style={{ cursor: 'pointer' }}
+                />
+                <Bar
+                  dataKey="unresolved"
+                  stackId="logs"
+                  fill={COLOR_UNRESOLVED}
+                  name="Unresolved"
+                  onClick={(d: unknown) => {
+                    const month = (d as { payload?: { month?: string } })?.payload?.month;
+                    if (month) toggleMonth(month);
+                  }}
+                  style={{ cursor: 'pointer' }}
+                />
+                <Bar
+                  dataKey="other"
+                  stackId="logs"
+                  fill={COLOR_OTHER}
+                  name="Other"
                   radius={[4, 4, 0, 0]}
                   onClick={(d: unknown) => {
                     const month = (d as { payload?: { month?: string } })?.payload?.month;
@@ -142,7 +147,7 @@ export function CsMonthlyTrend({
           </div>
 
           {expandedRow && (
-            <DrillPanel title={`${formatMonthYear(expandedRow.month)} — channels + complaint categories`}>
+            <DrillPanel title={`${formatMonthYear(expandedRow.month)} — reps + complaint categories`}>
               <MonthDrill row={expandedRow} />
             </DrillPanel>
           )}
@@ -153,10 +158,10 @@ export function CsMonthlyTrend({
 }
 
 function MonthDrill({ row }: { row: CsMonthBucket }) {
-  const channels: BreakdownItem[] = row.byChannel.map((e) => ({
-    label: e.channel,
-    display: formatNumber(e.count),
-    weight: e.count,
+  const reps: BreakdownItem[] = row.byRep.map((e) => ({
+    label: formatPersonName(e.name),
+    display: `${formatNumber(e.resolved)} / ${formatNumber(e.total)}`,
+    weight: e.total,
   }));
   const cats: BreakdownItem[] = row.byCategory.map((e) => ({
     label: e.categoryName,
@@ -166,15 +171,16 @@ function MonthDrill({ row }: { row: CsMonthBucket }) {
   return (
     <>
       <div className="mb-3 text-xs text-slate-600">
-        {formatNumber(row.enquiries)} enquiries · {formatNumber(row.complaints)} complaints ·{' '}
-        <span className="tabular-nums">{formatNumber(row.resolvedComplaints)}</span> resolved
+        {formatNumber(row.total)} logs ·{' '}
+        <span className="tabular-nums text-emerald-700">{formatNumber(row.resolved)}</span> resolved ·{' '}
+        <span className="tabular-nums text-amber-700">{formatNumber(row.unresolved)}</span> unresolved
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <div>
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-accent-emphasis">
-            By channel
+            By rep (resolved / total)
           </div>
-          <BreakdownList items={channels} emptyMessage="No channel-tagged logs this month." />
+          <BreakdownList items={reps} emptyMessage="No logs this month." />
         </div>
         <div>
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
@@ -218,9 +224,9 @@ function MonthTick({ x = 0, y = 0, payload, selected }: TickProps) {
 
 function Legend() {
   const items: Array<{ label: string; color: string }> = [
-    { label: 'Enquiries', color: COLOR_ENQ },
-    { label: 'Complaints (unresolved)', color: COLOR_COMP },
-    { label: 'Complaints (resolved)', color: COLOR_RESOLVED },
+    { label: 'Resolved', color: COLOR_RESOLVED },
+    { label: 'Unresolved', color: COLOR_UNRESOLVED },
+    { label: 'Other / no status', color: COLOR_OTHER },
   ];
   return (
     <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
@@ -239,7 +245,7 @@ function Legend() {
 }
 
 type TooltipPayloadEntry = {
-  payload?: CsMonthBucket;
+  payload?: TrendDatum;
 };
 
 function TrendTooltip({
@@ -254,54 +260,37 @@ function TrendTooltip({
   if (!active || !payload || payload.length === 0 || !label) return null;
   const row = payload[0]?.payload;
   if (!row) return null;
-  const rate = row.complaints > 0 ? (row.resolvedComplaints / row.complaints) * 100 : null;
+  const rate = row.total > 0 ? (row.resolved / row.total) * 100 : null;
+  const lines: Array<{ label: string; color: string; value: number }> = [
+    { label: 'Resolved', color: COLOR_RESOLVED, value: row.resolved },
+    { label: 'Unresolved', color: COLOR_UNRESOLVED, value: row.unresolved },
+    { label: 'Other', color: COLOR_OTHER, value: row.other },
+  ];
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-md">
-      <div className="text-xs font-semibold text-slate-900">{formatMonthYear(label)}</div>
+      <div className="text-xs font-semibold text-slate-900">
+        {formatMonthYear(label)}
+        {rate !== null ? (
+          <span className="ml-1 font-normal text-slate-500">({rate.toFixed(0)}% resolved)</span>
+        ) : null}
+      </div>
       <table className="mt-1 text-xs">
         <tbody>
-          <tr>
-            <td className="pr-2">
-              <span
-                aria-hidden
-                className="mr-1 inline-block h-2 w-2 rounded-sm align-middle"
-                style={{ backgroundColor: COLOR_ENQ }}
-              />
-              <span className="text-slate-600">Enquiries</span>
-            </td>
-            <td className="text-right tabular-nums text-slate-900">
-              {formatNumber(row.enquiries)}
-            </td>
-          </tr>
-          <tr>
-            <td className="pr-2">
-              <span
-                aria-hidden
-                className="mr-1 inline-block h-2 w-2 rounded-sm align-middle"
-                style={{ backgroundColor: COLOR_COMP }}
-              />
-              <span className="text-slate-600">Complaints</span>
-            </td>
-            <td className="text-right tabular-nums text-slate-900">
-              {formatNumber(row.complaints)}
-            </td>
-          </tr>
-          <tr>
-            <td className="pr-2">
-              <span
-                aria-hidden
-                className="mr-1 inline-block h-2 w-2 rounded-sm align-middle"
-                style={{ backgroundColor: COLOR_RESOLVED }}
-              />
-              <span className="text-slate-600">Resolved</span>
-            </td>
-            <td className="text-right tabular-nums text-slate-900">
-              {formatNumber(row.resolvedComplaints)}
-              {rate !== null ? (
-                <span className="ml-1 text-slate-500">({rate.toFixed(0)}%)</span>
-              ) : null}
-            </td>
-          </tr>
+          {lines.map((l) => (
+            <tr key={l.label}>
+              <td className="pr-2">
+                <span
+                  aria-hidden
+                  className="mr-1 inline-block h-2 w-2 rounded-sm align-middle"
+                  style={{ backgroundColor: l.color }}
+                />
+                <span className="text-slate-600">{l.label}</span>
+              </td>
+              <td className="text-right tabular-nums text-slate-900">
+                {formatNumber(l.value)}
+              </td>
+            </tr>
+          ))}
           <tr>
             <td colSpan={2} className="pt-1 text-[10px] italic text-slate-400">
               tap bar / chip below for breakdown

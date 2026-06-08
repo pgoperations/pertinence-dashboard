@@ -15,7 +15,7 @@ import type {
   CsPanelSources,
 } from '../../lib/queries/customerSupport';
 
-type TileId = 'total' | 'enquiries' | 'complaints' | 'resolved' | 'rate';
+type TileId = 'total' | 'resolved' | 'unresolved' | 'rate';
 
 type Tile = {
   id: TileId;
@@ -42,28 +42,22 @@ export function CsKpiStrip({
 
   const tiles: Tile[] = [
     {
-      id: 'enquiries',
-      label: 'Enquiries',
-      value: loading ? '—' : formatNumber(kpis.enquiries),
-      hint: 'No complaint nature',
-    },
-    {
-      id: 'complaints',
-      label: 'Complaints',
-      value: loading ? '—' : formatNumber(kpis.complaints),
-      hint: 'With category',
-    },
-    {
       id: 'resolved',
       label: 'Resolved',
-      value: loading ? '—' : formatNumber(kpis.resolvedComplaints),
-      hint: 'Strict "resolved" only',
+      value: loading ? '—' : formatNumber(kpis.resolved),
+      hint: 'Resolved + Responded',
+    },
+    {
+      id: 'unresolved',
+      label: 'Unresolved',
+      value: loading ? '—' : formatNumber(kpis.unresolved),
+      hint: 'Pending + In progress',
     },
     {
       id: 'rate',
       label: 'Resolution rate',
-      value: loading || kpis.complaints === 0 ? '—' : `${(kpis.resolutionRate * 100).toFixed(0)}%`,
-      hint: loading ? '' : `${formatNumber(kpis.resolvedComplaints)} of ${formatNumber(kpis.complaints)}`,
+      value: loading || kpis.totalLogs === 0 ? '—' : `${(kpis.resolutionRate * 100).toFixed(0)}%`,
+      hint: loading ? '' : `${formatNumber(kpis.resolved)} of ${formatNumber(kpis.totalLogs)}`,
     },
   ];
 
@@ -72,7 +66,7 @@ export function CsKpiStrip({
       title="Customer Support summary"
       subtitle="Tap a tile for the breakdown that produced it."
       right={asOf ? <StatusChip tone="slate">As of {formatAsOf(asOf)}</StatusChip> : undefined}
-      source='Source: customer_support_logs. "Resolved" = lower(trim(resolution_status)) = "resolved" (RESPONDED/PENDING/IN PROGRESS excluded — supervisor can change in migration 014).'
+      source='Source: customer_support_logs, counted as tickets (one per sheet row) by date of entry — matches the CX portal. Resolved = status exactly RESOLVED or RESPONDED; Unresolved = PENDING or IN PROGRESS; everything else (incl. composite/blank) is Other. Resolution rate = Resolved ÷ Total logs.'
     >
       <button
         type="button"
@@ -104,11 +98,11 @@ export function CsKpiStrip({
           {loading ? '—' : formatNumber(kpis.totalLogs)}
         </div>
         <div className="mt-1 text-[11px] text-slate-500">
-          {formatNumber(kpis.enquiries)} enquiries + {formatNumber(kpis.complaints)} complaints
+          {formatNumber(kpis.resolved)} resolved · {formatNumber(kpis.unresolved)} unresolved
         </div>
       </button>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
         {tiles.map((t) => {
           const isOpen = open === t.id;
           return (
@@ -161,10 +155,9 @@ export function CsKpiStrip({
 
 function drillTitle(id: TileId): string {
   switch (id) {
-    case 'total':      return 'Total logs — enquiries vs complaints';
-    case 'enquiries':  return 'Enquiries — by channel';
-    case 'complaints': return 'Complaints — by category';
-    case 'resolved':   return 'Resolved — by category';
+    case 'total':      return 'Total logs — status composition';
+    case 'resolved':   return 'Resolved — by rep';
+    case 'unresolved': return 'Unresolved — by rep';
     case 'rate':       return 'Resolution rate — by month';
   }
 }
@@ -179,44 +172,35 @@ function renderDrill(id: TileId, b: CsKpiBreakdowns, kpis: CsKpis) {
       }));
       return <BreakdownList items={items} emptyMessage="No logs in this range." />;
     }
-    case 'enquiries': {
-      const items: BreakdownItem[] = b.enquiries.map((e) => ({
-        label: e.channel,
-        display: formatNumber(e.count),
-        weight: e.count,
-      }));
-      return (
-        <BreakdownList
-          items={items}
-          emptyMessage="No channel-tagged logs in this range."
-        />
-      );
-    }
-    case 'complaints': {
-      const items: BreakdownItem[] = b.complaints.map((e) => ({
-        label: e.categoryName,
-        display: `${formatNumber(e.count)} (${formatNumber(e.resolvedCount)} resolved)`,
-        weight: e.count,
-      }));
-      return <BreakdownList items={items} emptyMessage="No complaints in this range." />;
-    }
     case 'resolved': {
-      const items: BreakdownItem[] = b.resolvedComplaints.map((e) => ({
-        label: e.categoryName,
-        display: `${formatNumber(e.resolvedCount)} / ${formatNumber(e.count)}`,
-        weight: e.resolvedCount,
-      }));
-      return <BreakdownList items={items} emptyMessage="No resolved complaints in this range." />;
+      const items: BreakdownItem[] = b.resolved
+        .filter((e) => e.resolved > 0)
+        .map((e) => ({
+          label: e.name,
+          display: `${formatNumber(e.resolved)} of ${formatNumber(e.total)}`,
+          weight: e.resolved,
+        }));
+      return <BreakdownList items={items} emptyMessage="No resolved logs in this range." />;
+    }
+    case 'unresolved': {
+      const items: BreakdownItem[] = b.unresolved
+        .filter((e) => e.unresolved > 0)
+        .map((e) => ({
+          label: e.name,
+          display: `${formatNumber(e.unresolved)} of ${formatNumber(e.total)}`,
+          weight: e.unresolved,
+        }));
+      return <BreakdownList items={items} emptyMessage="No unresolved logs in this range." />;
     }
     case 'rate': {
-      if (kpis.complaints === 0) {
-        return <p className="text-xs text-slate-500">No complaints in this range.</p>;
+      if (kpis.totalLogs === 0) {
+        return <p className="text-xs text-slate-500">No logs in this range.</p>;
       }
       const items: BreakdownItem[] = b.resolutionRate.map((e) => ({
         label: formatMonthYear(e.month),
         display: e.total > 0
           ? `${(e.rate * 100).toFixed(0)}% (${formatNumber(e.resolved)} of ${formatNumber(e.total)})`
-          : '— no complaints',
+          : '— no logs',
         weight: e.rate * 100,
       }));
       return <BreakdownList items={items} emptyMessage="No months in this range." />;
