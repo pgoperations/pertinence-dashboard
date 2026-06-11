@@ -32,25 +32,21 @@ import {
   type ParsedMediaWeeklyRow,
 } from '../_shared/parseMediaWeeklyTab.ts';
 import { handlePreflight, jsonResponse } from '../_shared/cors.ts';
+import { discoverYearTabs } from '../_shared/yearTabs.ts';
 
 const SOURCE_SHEET = 'marketing_team_reporting_template';
-const SOURCE_TAB = 'Media Team Reporting';
 
-// Year section list. Each entry tells the parser where its year's data starts
-// on the sheet (1-indexed sheet row).
+// Year-agnostic discovery (2026-06-05). The supervisor split the old single
+// "Media Team Reporting" tab into one tab per year — `2026 Media Team
+// Reporting`, `2027 Media Team Reporting`, … — so Media now carries over by
+// tab name like every other ingest, with no row-offset config.
 //
-// CARRYOVER NOTE (2026-06-04): unlike the other ingests, the Media tab is a
-// single grid where each year is a sub-region at a fixed row offset — there is
-// NO year-marker cell to scan for, so a 2027 section CANNOT be auto-discovered.
-// When the supervisor adds the 2027 weekly grid, add its start row here:
-//   { year: 2027, startRow: <row of the first 2027 month header>, endRow: <…> }
-// This is the only remaining manual step for 2027 carryover across all ingests.
-const YEAR_SECTIONS: Array<{ year: number; startRow: number; endRow: number }> = [
-  // 2026 section starts at sheet row 676. End set to 1008 (sheet's row
-  // count as of 2026-06-01) — generous upper bound; the parser stops
-  // earlier when it stops finding month headers.
-  { year: 2026, startRow: 676, endRow: 1008 },
-];
+// CRITICAL: the media weekly grid has NO in-cell year marker, so the only year
+// signal is the tab name. Each `<year> Media Team Reporting` tab MUST contain
+// only that year's grid. (The original tab stacked 2025 in rows 3–675 and 2026
+// from row 676 — those years must be separated into their own tabs, or the
+// parser would tag both as the tab's year.)
+const TAB_PATTERN = /^(\d{4}) Media Team Reporting$/;
 
 Deno.serve(async (req) => {
   const preflight = handlePreflight(req);
@@ -71,7 +67,8 @@ Deno.serve(async (req) => {
     const accessToken = await getSheetsAccessToken();
     const lookups = await loadMediaLookups(supabase);
 
-    const allParsed: ParsedMediaWeeklyRow[] = [];
+    type TaggedMediaRow = ParsedMediaWeeklyRow & { source_tab: string };
+    const allParsed: TaggedMediaRow[] = [];
     const perYearStats: Array<{
       year: number;
       monthsFound: number;
@@ -85,25 +82,30 @@ Deno.serve(async (req) => {
       unmappedMetricKeys: Array<{ key: string; count: number }>;
     }> = [];
 
-    for (const section of YEAR_SECTIONS) {
-      // Read the year's region of the tab. The range is 1-indexed; we read
-      // from startRow to endRow, covering cols A through AO (40 cols
-      // accommodates 4 weeks × ~10 cols each).
-      const range = `${SOURCE_TAB}!A${section.startRow}:AO${section.endRow}`;
-      const data = await readSheetValues(accessToken, spreadsheetId, range);
+    const yearTabs = await discoverYearTabs(accessToken, spreadsheetId, TAB_PATTERN);
+    if (yearTabs.length === 0) {
+      throw new Error(
+        'No "<year> Media Team Reporting" tab found (expected e.g. "2026 Media Team Reporting").',
+      );
+    }
+
+    for (const { tab, year } of yearTabs) {
+      // Each year is its own tab holding only that year's weekly grid, so read
+      // the whole tab (cols A–AO) and let the parser find the month blocks.
+      const data = await readSheetValues(accessToken, spreadsheetId, `${tab}!A:AO`);
       const rows = data.values ?? [];
 
       const { rows: parsed, stats } = parseMediaWeeklyTab(
         rows,
-        section.year,
+        year,
         0,
         rows.length,
         lookups,
       );
-      for (const r of parsed) allParsed.push(r);
+      for (const r of parsed) allParsed.push({ ...r, source_tab: tab });
 
       perYearStats.push({
-        year: section.year,
+        year,
         monthsFound: stats.monthsFound,
         weeksFound: stats.weeksFound,
         platformSectionsFound: stats.platformSectionsFound,
@@ -124,7 +126,7 @@ Deno.serve(async (req) => {
 
     const upsertRows = allParsed.map((r) => ({
       source_sheet: SOURCE_SHEET,
-      source_tab: SOURCE_TAB,
+      source_tab: r.source_tab,
       source_row_id: r.source_row_id,
       raw_row: r.raw_row,
       quality_flags: r.quality_flags,
@@ -138,16 +140,16 @@ Deno.serve(async (req) => {
       value: r.value,
     }));
 
-    // Stale-row sweep, scoped to the years we're rebuilding. If the supervisor
-    // moves a brand column (PG <-> REALVEST swap) or renames a platform header,
-    // the source_row_id format changes and old rows would otherwise stick
-    // around undetected. Scoped delete keeps prior-year data safe.
-    const yearsToIngest = YEAR_SECTIONS.map((s) => s.year);
+    // Stale-row sweep, scoped to the years we're rebuilding. Deleted by
+    // source_sheet + period_year ONLY (not source_tab): this table is fed
+    // solely by this ingest, and dropping the source_tab filter also clears the
+    // pre-rename rows (old source_tab "Media Team Reporting") in the same pass
+    // as we rebuild them under the new "<year> Media Team Reporting" tab.
+    const yearsToIngest = yearTabs.map((t) => t.year);
     const { error: cleanupError } = await supabase
       .from('media_weekly_metrics')
       .delete()
       .eq('source_sheet', SOURCE_SHEET)
-      .eq('source_tab', SOURCE_TAB)
       .in('period_year', yearsToIngest);
     if (cleanupError) {
       throw new Error(`media_weekly_metrics cleanup failed: ${cleanupError.message}`);
@@ -183,8 +185,8 @@ Deno.serve(async (req) => {
       ok: true,
       startedAt,
       finishedAt: new Date().toISOString(),
-      source: { sheet: SOURCE_SHEET, tab: SOURCE_TAB },
-      yearsIngested: YEAR_SECTIONS.map((s) => s.year),
+      source: { sheet: SOURCE_SHEET, tabs: yearTabs.map((t) => t.tab) },
+      yearsIngested: yearTabs.map((t) => t.year),
       perYearStats,
       rowsUpserted: upserted,
       flagCounts,

@@ -45,6 +45,7 @@ import {
 import { QUALITY_FLAGS, type QualityFlags } from '../_shared/quality_flags.ts';
 import { handlePreflight, jsonResponse } from '../_shared/cors.ts';
 import { discoverYearTabs } from '../_shared/yearTabs.ts';
+import { buildIdsByTab, sweepStaleRows } from '../_shared/sweepStaleRows.ts';
 
 const SOURCE_SHEET = 'bank_deposit_mirror';
 // Year-agnostic discovery — picks up "2027 Customer File" automatically when
@@ -271,6 +272,15 @@ Deno.serve(async (req) => {
       upserted += chunk.length;
     }
 
+    // Reconcile to exactly what this run produced — see _shared/sweepStaleRows.ts.
+    // (Customer File used positional `row-{N}` ids, which drift on insert/reorder.)
+    const orphansDeleted = await sweepStaleRows(
+      supabase,
+      'customer_files',
+      SOURCE_SHEET,
+      buildIdsByTab(parsed),
+    );
+
     // No aggregate refresh — Customer File doesn't back a headline panel yet.
 
     const flagCounts: Record<string, number> = {};
@@ -287,6 +297,7 @@ Deno.serve(async (req) => {
       source: { sheet: SOURCE_SHEET, tabs: yearTabs.map((t) => t.tab) },
       rowsRead,
       rowsUpserted: upserted,
+      orphansDeleted,
       blankSkipped,
       forwardFilledDateCount,
       flagCounts,

@@ -75,6 +75,7 @@ import {
 import { keywordMatchCategory } from '../_shared/categoryFallback.ts';
 import { QUALITY_FLAGS, type QualityFlags } from '../_shared/quality_flags.ts';
 import { handlePreflight, jsonResponse } from '../_shared/cors.ts';
+import { buildIdsByTab, sweepStaleRows } from '../_shared/sweepStaleRows.ts';
 
 const SOURCE_SHEET = 'marketing_fund_expense';
 // 200 rows is well above the ~25 expenditure rows/month seen on Apr/May 2026.
@@ -315,6 +316,15 @@ Deno.serve(async (req) => {
       upserted += chunk.length;
     }
 
+    // Reconcile each ingested month-tab to exactly what this run produced — see
+    // _shared/sweepStaleRows.ts. (Used positional `exp-row-{N}` ids that drift.)
+    const orphansDeleted = await sweepStaleRows(
+      supabase,
+      'marketing_expenses',
+      SOURCE_SHEET,
+      buildIdsByTab(allRows),
+    );
+
     const { data: refreshResult, error: refreshError } =
       await supabase.rpc('refresh_marketing_monthly');
     if (refreshError) throw new Error(`Aggregate refresh failed: ${refreshError.message}`);
@@ -336,6 +346,7 @@ Deno.serve(async (req) => {
       tabsIngestedNames: tabsToIngest.map((t) => t.tab.title),
       tabStats,
       rowsUpserted: upserted,
+      orphansDeleted,
       flagCounts,
       aggregateRowsInserted: refreshResult,
     });

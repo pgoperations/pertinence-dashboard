@@ -56,27 +56,34 @@ This is the supervisor's intended pattern (decision 2026-05-14): one log with mu
 ## Team rules
 
 - **Use canonical complaint categories** for column H. Examples already in use: `Documentation`, `Site Allocation`, `Refund`, `Termination`, `Movement`, `Conversion to Land`, `Semi-finished Delivery`. If your log doesn't fit any, type your best description — the dashboard tags it `unknown_complaint_category` and the supervisor adds the alias. See [00-common §4](00-common.md#4-when-a-new-value-appears).
-- **Empty `Nature of Complaint` is allowed** — it represents an enquiry rather than a complaint. The dashboard does **not** flag empty Nature cells; absence is its own valid state.
-- **`Status of Complaint` drives the Resolution Rate KPI.** Be consistent: use `Resolved` (not `Resolved.`, `RESOLVED`, `Done`). Case-insensitive matching helps, but inventing new variants doesn't.
-- **Channel** values feed the "Logs by Channel" bar chart. Stick to the standard set: `Call`, `WhatsApp`, `Email`, `In-Person`, `Walk-In`, `SMS`. New channels are fine but consistency matters across reps.
+- **Every log with a date counts as one ticket** — by the date in column C, matching the supervisor's Customer Service Portal (reconciled 2026-06-05). A blank `Nature of Complaint` is fine; the row still counts as a ticket. The dashboard no longer splits out "enquiries" — everything rolls into one **Total Customer Logs** figure.
+- **`Status of Complaint` (column N) drives the Resolved / Unresolved split**, matched **exactly** (case-insensitive, spaces tolerated):
+  - **Resolved** = `Resolved` or `Responded`
+  - **Unresolved** = `Pending` or `In Progress`
+  - Anything else — blank, `Escalated`, or a combined value like `Responded, Pending` — counts in the Total but in **neither** bucket ("Other"), which lowers the resolution rate.
+  - So be consistent: use exactly `Resolved`, `Responded`, `Pending`, or `In Progress`. Invented variants (`Done`, `Closed`, `Resolved.`) land in "Other".
+- **`Channel` (column J) is still recorded** on each log for your own records, but the dashboard's old "Logs by Channel" chart was **replaced on 2026-06-05** by a **Performance by Representative** chart (resolved vs unresolved per rep). Channel is no longer charted, so its exact spelling no longer affects the dashboard — though keeping it consistent is still good practice.
 
 ---
 
 ## Adding or removing a rep
 
-**New rep:**
+**New rep — now automatic (2026-06-05):**
 
-1. Create the tab in MASTER SHEET - CUSTOMER SUPPORT, named in ALL-CAPS (e.g., `IFEOMA`).
-2. Add the standard column headers (A:N as above).
-3. Notify the dashboard owner with:
-   - The rep's name (as it should appear on the dashboard, mixed case e.g., `Ifeoma`)
-   - Their brand assignment: PPL, RealVest, or Both
-   - Start date
-4. The owner adds the rep to the dashboard's `customer_service_reps` roster.
-5. Logs the rep enters before the roster is updated are saved on the dashboard side but counted as "unmapped rep" until the roster row exists. After the roster is updated, the next pull resolves them correctly.
+1. Create the tab in MASTER SHEET - CUSTOMER SUPPORT, named in ALL-CAPS (e.g., `IFEOMA`). Easiest is to **duplicate an existing rep's tab** and clear its data, so the column layout (A:N) matches exactly.
+2. Make sure the rep is listed in the **`Staff_Reference`** tab with their work email — `…@pertinenceproperties.com` for PPL or `…@realvest.ng` for RealVest. The dashboard reads this to assign the rep's brand automatically.
+3. That's it. On the next pull the dashboard **auto-detects the new rep tab**, creates the rep, and assigns their brand from the email domain — **no notification or code change needed**.
+   - If the rep is **not** in `Staff_Reference` (or the email domain isn't recognized), the dashboard can't determine their brand, so it **skips that tab** and lists it as an "unmapped rep" for the owner. Add the email to `Staff_Reference` and re-sync to fix.
+4. Non-rep tabs are ignored automatically — `Staff_Reference`, `Rep ID`, `New Customer File`, `_Categories`, and the inactive `ABIDEMI` / `VICTORIA`. Any tab missing the standard `Date` + `Status of Complaint` headers is also skipped (this is why a stray tab like an audit log never pollutes the numbers).
 
-**Departing rep:** do **not** delete the tab. Their historical logs are still part of the brand's totals. Tell the dashboard owner to mark them inactive in the roster — they'll stop appearing in current-period rep lists but stay in historical aggregates.
+**Departing rep:** do **not** delete the tab — their historical logs are still part of the brand's totals. Tell the dashboard owner so they can remove the rep from current-period views while keeping the history.
 
 ---
 
-*Owner: Customer Support team. Last reviewed: 2026-05-29.*
+## Starting a new year
+
+This sheet has **no year tabs** — it's one continuous log per rep, so there is **nothing to create** for 2027. Keep logging; the dashboard's date-range selector separates the years. (See [00-common §6](00-common.md#6-starting-a-new-year-2027-and-beyond).)
+
+---
+
+*Owner: Customer Support team. Last reviewed: 2026-06-05.*

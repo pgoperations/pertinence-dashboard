@@ -67,7 +67,7 @@ Column A is the bank's auto-paste. Finance has historically written `M/D/YYYY` s
 | A | (blank) | — | Always-empty spacer column. |
 | B | `NAMES` | Text | Customer name. |
 | C | `LOCATION` | Text — canonical-mapped | Same canonical list as Bank Deposit. |
-| D | `PLOT TYPE` | Text | Free text; the parser recognizes `1 EXECUTIVE`, `600SQM`, `1 ACRE`, etc. Unrecognized values are flagged `unparseable_plot_type` but still count toward total plots. |
+| D | `PLOT TYPE` | Text | **Count + one of four canonical words:** `STARTER`, `CLASSIC`, `EXECUTIVE`, `SPECIAL` — e.g. `1 EXECUTIVE`, `2 CLASSIC`. Anything else (a bare size like `450SQM`, a typo, or a compound like `1 450SQM & 1 380SQM`) is still **counted**, but bucketed as **Special** and flagged `plot_type_fallback_special` for the supervisor — so it counts toward total plots but not toward the correct size on the plots-by-size chart. See the team rules below. |
 | E | `AMOUNT` | Number | Plain number — no ₦, no commas. |
 | F | `INITIAL` | Number | The initial deposit, if applicable. |
 | G | `DATE` | Real date | Transaction date. |
@@ -75,7 +75,12 @@ Column A is the bank's auto-paste. Finance has historically written `M/D/YYYY` s
 
 ### Team rules
 
-- **One row per plot sold.** If a customer buys two plots in one transaction, create two rows.
+- **One row per plot sold.** If a customer buys two plots in one transaction, create two rows. Do **not** pack several plots into one `PLOT TYPE` cell.
+- **Use the canonical word, not the raw size.** Map the size to its plot type yourself:
+  - `300SQM` → `STARTER` · `450SQM` → `CLASSIC` · `500SQM` or `600SQM` → `EXECUTIVE`
+  - anything else (sub-300, `1 ACRE`, `1 QUARTER`, irregular sizes like `380SQM`) → `SPECIAL`
+  - Always put the **count first**: `1 EXECUTIVE`, `2 SPECIAL`.
+- **Why it matters:** a cell like `1 450SQM & 1 380SQM` still counts the plots, but the dashboard can't tell that the `450SQM` was a Classic — it lands them both under "Special" on the plots-by-size chart and raises a `plot_type_fallback_special` flag. Splitting into two rows (`1 CLASSIC` and `1 SPECIAL`) keeps the size chart accurate.
 - The dashboard will sometimes show a different total here than on the Bank Deposit page for the same month. **That is the point** — Bank Deposit measures money, Weekly Sales measures plots. Do not edit either to reconcile.
 
 ---
@@ -113,4 +118,20 @@ Column A is the bank's auto-paste. Finance has historically written `M/D/YYYY` s
 
 ---
 
-*Owner: Sales & Finance team. Last reviewed: 2026-05-29.*
+## 4. Starting a new year (2027 and beyond)
+
+At the start of 2027, create three new tabs in this sheet by **duplicating** the 2026 tabs and renaming the copies. Read [00-common §6](00-common.md#6-starting-a-new-year-2027-and-beyond) for the full rules; for your sheet specifically:
+
+| Duplicate this 2026 tab | Rename the copy to |
+| --- | --- |
+| `2026 LAND` | `2027 LAND` |
+| `2026 Weekly Sales Report` | `2027 Weekly Sales Report` |
+| `2026 Customer File` | `2027 Customer File` |
+
+- **Duplicate, don't rebuild.** The `CLIENT  NAME` double space, the column-L date convention, the blank spacer columns, and the exact column order must all carry over — duplicating the tab guarantees this; rebuilding by hand risks a silent break.
+- **Keep the 2026 tabs.** Don't rename or delete them — the dashboard still reads them for historical totals, and the date-range selector switches between years.
+- **No notification needed.** The dashboard discovers `2027 LAND`, `2027 Weekly Sales Report`, and `2027 Customer File` by name automatically on the next pull. The owner can confirm with the read-only `pnpm check:carryover`.
+
+---
+
+*Owner: Sales & Finance team. Last reviewed: 2026-06-11.*

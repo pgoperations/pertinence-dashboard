@@ -11,8 +11,12 @@
 //   * Named column constants here, never positional indexes. The HR dashboard
 //     burned us on positional reads — never again.
 //   * `CLIENT  NAME` (column I) has an intentional double space. Match exactly.
-//   * source_row_id: TRANS CODE if non-empty, else `row-{N}` (1-indexed sheet row).
-//   * Idempotent upsert keyed on (source_sheet, source_tab, source_row_id).
+//   * source_row_id: TRANS CODE if non-empty, else `auto-{contentHash}` — a
+//     content-stable id (date+amount+client+…) that survives row moves. Replaces
+//     the old positional `row-{N}`, which drifted on every insert/reorder and
+//     minted orphan copies (root cause of the 2026-06-11 over-count).
+//   * Idempotent upsert keyed on (source_sheet, source_tab, source_row_id), plus
+//     a stale-row sweep each run so deleted/edited rows don't linger as orphans.
 //   * After ingest, refresh sales_by_location_monthly via the RPC in migration 010.
 //
 // Date handling (revised 2026-05-21):
@@ -52,6 +56,7 @@ import {
 import { QUALITY_FLAGS, type QualityFlags } from '../_shared/quality_flags.ts';
 import { handlePreflight, jsonResponse } from '../_shared/cors.ts';
 import { discoverYearTabs } from '../_shared/yearTabs.ts';
+import { buildIdsByTab, sweepStaleRows } from '../_shared/sweepStaleRows.ts';
 
 const SOURCE_SHEET = 'bank_deposit_mirror';
 // Year-agnostic discovery — picks up "2027 LAND" automatically when the
@@ -134,9 +139,40 @@ function toNumberOrZero(v: unknown): number {
   return 0;
 }
 
+// FNV-1a 32-bit hash → 8-char hex. Builds a CONTENT-STABLE source_row_id for rows
+// with no TRANS CODE, so they keep one identity across sheet edits. The old
+// positional `row-{N}` drifted whenever rows were inserted/reordered, minting
+// orphan copies that the upsert never cleaned up.
+function contentHash(parts: Array<string | number | null | undefined>): string {
+  const s = parts.map((p) => (p == null ? '' : String(p))).join('');
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+// A structurally empty row: no money AND no identifying content — a spacer,
+// date-marker, or status-only row between date groups on the sheet. These used to
+// ingest as zero-amount `row-{N}` rows and multiply across syncs, inflating every
+// count. A real deposit always carries an AMOUNT (and usually a TRANS CODE).
+function isNoiseRow(row: unknown[]): boolean {
+  if (toNumberOrZero(row[COL.AMOUNT]) !== 0) return false;
+  return !(
+    trimOrNull(row[COL.TRANS_CODE]) ||
+    trimOrNull(row[COL.CLIENT_NAME]) ||
+    trimOrNull(row[COL.SALES_PERSON]) ||
+    trimOrNull(row[COL.PURPOSE]) ||
+    trimOrNull(row[COL.LOCATION]) ||
+    trimOrNull(row[COL.BANK_STATEMENT_DETAILS]) ||
+    trimOrNull(row[COL.ACCOUNT_PAYMENT_NAME]) ||
+    trimOrNull(row[COL.BANK_ACCOUNT])
+  );
+}
+
 function parseRow(
   row: unknown[],
-  sheetRowNumber: number,
   txn_date: string | null,
   dateUnparseable: boolean,
   dateFallbackToA: unknown,
@@ -175,7 +211,17 @@ function parseRow(
   if (!sales_person) flags[QUALITY_FLAGS.NULL_SALES_PERSON] = true;
 
   const transCode = trimOrNull(row[COL.TRANS_CODE]);
-  const source_row_id = transCode ?? `row-${sheetRowNumber}`;
+  const source_row_id = transCode ??
+    `auto-${contentHash([
+      txn_date,
+      amount_received,
+      customer_name,
+      sales_person,
+      purposeRaw,
+      locationRaw,
+      trimOrNull(row[COL.BANK_STATEMENT_DETAILS]),
+      trimOrNull(row[COL.ACCOUNT_PAYMENT_NAME]),
+    ])}`;
 
   const raw_row: Record<string, unknown> = {};
   RAW_ROW_KEYS.forEach((key, idx) => {
@@ -234,7 +280,8 @@ Deno.serve(async (req) => {
     const parsed: ParsedRow[] = [];
     let rowsRead = 0;
     let blankSkipped = 0;
-    let fallbackRowIdCount = 0;
+    let noiseSkipped = 0;
+    let autoIdCount = 0;
     let forwardFilledDateCount = 0;
     let dateFallbackCount = 0;
     const duplicateTransCodes: string[] = [];
@@ -270,8 +317,12 @@ Deno.serve(async (req) => {
       const tabParsed: ParsedRow[] = [];
       let lastValidDate: string | null = null;
       for (let i = 0; i < rawRows.length; i++) {
-        const sheetRowNumber = i + 2; // range starts at A2
         const row = rawRows[i] ?? [];
+        // Spacer / date-marker / status-only row — drop before it pollutes counts.
+        if (isNoiseRow(row)) {
+          noiseSkipped++;
+          continue;
+        }
         const rawL = row[COL.DATE];
         const rawA = row[COL.DATE_A];
         const lEmpty = rawL === '' || rawL === undefined || rawL === null;
@@ -303,33 +354,30 @@ Deno.serve(async (req) => {
           if (txn_date !== null) forwardFilledDateCount++;
         }
 
-        const parsedRow = parseRow(row, sheetRowNumber, txn_date, dateUnparseable, dateFallbackToA, graceIso, lookups, sourceTab);
+        const parsedRow = parseRow(row, txn_date, dateUnparseable, dateFallbackToA, graceIso, lookups, sourceTab);
         if (!parsedRow) {
           blankSkipped++;
           continue;
         }
-        if (parsedRow.source_row_id.startsWith('row-')) fallbackRowIdCount++;
-        // Stash the sheet row number for the dedup pass below.
-        (parsedRow as ParsedRow & { _sheetRow: number })._sheetRow = sheetRowNumber;
+        if (parsedRow.source_row_id.startsWith('auto-')) autoIdCount++;
         tabParsed.push(parsedRow);
       }
 
-      // Defend against duplicate TRANS CODE entries on the sheet: without this,
-      // two rows sharing one code would collide on the (source_sheet, source_tab,
-      // source_row_id) unique key and the second upsert would silently overwrite
-      // the first. First occurrence keeps the natural id; subsequent occurrences
-      // get `{id}-row{sheetRow}` appended, which is stable across re-ingests as
-      // long as rows aren't reordered. Dedup is per-tab — the same code can
-      // legitimately recur across different years' tabs.
-      const seenIds = new Set<string>();
+      // Disambiguate any source_row_id that recurs within this tab's run — a
+      // duplicate TRANS CODE typed on the sheet, or two code-less rows whose
+      // content hashes collide. Append an OCCURRENCE index (`-2`, `-3`, …) rather
+      // than the sheet row number, so the id stays stable across reorderings.
+      // Combined with the stale-row sweep below, any churn is self-correcting:
+      // orphaned variants are deleted on the next run. Per-tab — the same code
+      // can legitimately recur across different years' tabs.
+      const occurrences = new Map<string, number>();
       for (const r of tabParsed) {
-        if (seenIds.has(r.source_row_id)) {
+        const n = (occurrences.get(r.source_row_id) ?? 0) + 1;
+        occurrences.set(r.source_row_id, n);
+        if (n > 1) {
           duplicateTransCodes.push(r.source_row_id);
-          const sheetRow = (r as ParsedRow & { _sheetRow: number })._sheetRow;
-          r.source_row_id = `${r.source_row_id}-row${sheetRow}`;
+          r.source_row_id = `${r.source_row_id}-${n}`;
         }
-        seenIds.add(r.source_row_id);
-        delete (r as Partial<ParsedRow & { _sheetRow: number }>)._sheetRow;
       }
 
       parsed.push(...tabParsed);
@@ -348,6 +396,17 @@ Deno.serve(async (req) => {
       if (error) throw new Error(`bank_deposits upsert failed: ${error.message}`);
       upserted += chunk.length;
     }
+
+    // --- Stale-row sweep: reconcile to exactly what this run produced --------
+    // Removes orphans (deleted rows, edited TRANS CODES, drifted positional ids)
+    // that the upsert can't. Root cause of the 2026-06-11 over-count — see
+    // _shared/sweepStaleRows.ts.
+    const orphansDeleted = await sweepStaleRows(
+      supabase,
+      'bank_deposits',
+      SOURCE_SHEET,
+      buildIdsByTab(parsed),
+    );
 
     const { data: refreshResult, error: refreshError } = await supabase
       .rpc('refresh_sales_by_location_monthly');
@@ -410,8 +469,10 @@ Deno.serve(async (req) => {
       source: { sheet: SOURCE_SHEET, tabs: yearTabs.map((t) => t.tab) },
       rowsRead,
       rowsUpserted: upserted,
+      orphansDeleted,
       blankSkipped,
-      fallbackRowIdCount,
+      noiseSkipped,
+      autoIdCount,
       forwardFilledDateCount,
       dateFallbackCount,
       duplicateTransCodes,

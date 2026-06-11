@@ -119,7 +119,47 @@ The dashboard works against a "canonical list" for these fields:
 
 ---
 
-## 6. Glossary
+## 6. Starting a new year (2027 and beyond)
+
+At the start of each calendar year, most source sheets need a fresh tab (or section) for the new year. The dashboard was built to pick these up **automatically** as long as the naming and structure rules below are followed.
+
+### The golden rules
+
+1. **Add, never rename.** Create the new year's tab; **do not** rename or delete the previous year's tab. The dashboard reads **every** year side by side, and the date-range selector switches between them. Renaming `2026 LAND` to `2027 LAND` would make 2026 vanish from the dashboard.
+2. **Duplicate the structure exactly.** Make the new tab by **duplicating** last year's tab (right-click the tab → *Duplicate*), so every column, header, and layout detail is identical — then rename the copy for the new year. Do **not** rebuild from scratch; a single shifted or renamed column silently breaks that part of the dashboard (see §3.1).
+3. **Clear the copy's data, keep its skeleton.** After duplicating, delete the old data rows (keep the headers and any structural/title rows), then enter the new year's data.
+4. **Match the tab-name format exactly.** A name that doesn't match the convention is **silently ignored** — no error, the year just never appears. The formats are in the table below.
+
+### What to create for each sheet
+
+| Sheet | 2026 item | Create for 2027 | Picked up automatically? |
+| --- | --- | --- | --- |
+| **Bank Deposit Mirror** | `2026 LAND` | `2027 LAND` | ✅ Yes |
+| | `2026 Weekly Sales Report` | `2027 Weekly Sales Report` | ✅ Yes |
+| | `2026 Customer File` | `2027 Customer File` | ✅ Yes |
+| **Marketing Fund Expense** | `December 2026` | `January 2027`, `February 2027`, … (one tab per month, `Month YYYY`) | ✅ Yes |
+| **Marketing Team Reporting → `Realtors Managers Weekly Report`** | `2026 Realtors Managers Weekly Report` | `2027 Realtors Managers Weekly Report` | ✅ Yes |
+| **Marketing Team Reporting → `Digital Marketing` tab** | 2026 block | a new **2027 block below it**, with a `2027` year-marker cell — **not** a new tab | ✅ Yes (keep it within the read window) |
+| **Marketing Team Reporting → `Media Team Reporting`** | `2026 Media Team Reporting` (one tab per year) | `2027 Media Team Reporting` | ✅ Yes — each year tab must hold **only that year** |
+| **MASTER SHEET - CUSTOMER SUPPORT** | (no year tabs) | nothing — it's a continuous log | ✅ Yes (always) |
+
+"Picked up automatically" means **no code change and no notification** is needed — the dashboard finds the new tab/section by name on the next pull.
+
+### Media — one tab per year
+
+As of 2026-06-05, Media uses **one tab per year** (`2026 Media Team Reporting`, `2027 Media Team Reporting`, …), discovered by name like every other sheet. The one rule particular to Media: its weekly grid has **no in-cell year label**, so each tab must contain **only that one year** — never two years stacked in one tab. See [05-media-content.md](05-media-content.md) for the details.
+
+### Verify before relying on it
+
+Right after the new-year tabs are created, the dashboard owner can run a **read-only check** (`pnpm check:carryover`) that lists what each sheet contains and confirms the new year is discovered — **before** any real data is pulled in. This is the safe way to confirm a year rolled over correctly without touching data. Ask the owner to run it once the tabs exist.
+
+### Customer Support carries over on its own
+
+The Customer Support sheet has **no year tabs** — it's one continuous log per rep. Just keep logging into the new year; the dashboard's date-range selector separates the years. (Adding a **new rep** is covered in the Customer Support document — and is automatic now too.)
+
+---
+
+## 7. Glossary
 
 - **Canonical** — the single official spelling for a value (e.g., `Lavida Hills` is the canonical name for that estate). All operator variations are mapped to it via aliases.
 - **Alias** — an alternative spelling that maps to a canonical. Adding an alias is how the dashboard "learns" a new way of writing the same thing without changing the source sheet.
@@ -130,4 +170,4 @@ The dashboard works against a "canonical list" for these fields:
 
 ---
 
-*Owner: Pertinence Group Operations. Last reviewed: 2026-05-29.*
+*Owner: Pertinence Group Operations. Last reviewed: 2026-06-05.*

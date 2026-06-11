@@ -37,8 +37,9 @@ export type PlotTypeName = 'Starter' | 'Classic' | 'Executive' | 'Special';
 
 export type ParsedWeeklyPlot = {
   canonicalName: PlotTypeName;
-  count: number;            // from the leading number ("3 EXECUTIVE" → 3)
-  sizeSqm: number | null;   // from the optional [NSQM] annotation
+  count: number;            // summed across segments ("1 450SQM & 1 380SQM" → 2)
+  sizeSqm: number | null;   // first [NSQM]/NSQM size seen, if any (cosmetic)
+  nonStandard: boolean;     // true if any segment wasn't a canonical word → Special fallback
 };
 
 export type ParsedCustomerPlot = {
@@ -75,38 +76,76 @@ export function sqmToCanonical(sqm: number): PlotTypeName {
   return 'Special';
 }
 
-// Weekly Sales: "{count} {WORD}" with optional " [{NSQM or anything}]" annotation.
-// QUARTER / ACRE / HECTAR(E)(S) all bucket as Special per the brief.
-// Bracket annotation is permissive: "[NSQM]" extracts the size; anything else
-// (e.g. "[cornerpiece]") is preserved as cosmetic note and the row still parses.
-// Returns null only if the cell shape itself doesn't match — caller flags
-// unparseable_plot_type.
-const WEEKLY_RE =
-  /^\s*(\d+)\s+(STARTER|CLASSIC|EXECUTIVE|SPECIAL|QUARTER|ACRE|ACRES|HECTAR|HECTARE|HECTARES)(?:\s*\[([^\]]*)\])?\s*$/i;
-const BRACKET_SQM_RE = /^\s*(\d+)\s*SQM\s*$/i;
+// Weekly Sales plot-type parser.
+//
+// A cell carries one or more plots. The standard form is "{count} {WORD}" with an
+// optional " [{NSQM or anything}]" annotation, where WORD is a canonical type or
+// a known Special synonym (QUARTER / ACRE / HECTARE). But the supervisor also
+// enters land in non-standard forms — bare sizes ("450SQM"), typos, and compound
+// cells joining several plots with "&" / "+" / "," (e.g. "1 450SQM & 1 380SQM").
+//
+// Policy (supervisor 2026-06-11): every entry on this sheet IS land, so a plot is
+// never dropped. We split the cell into segments, sum each segment's count
+// (defaulting a count-less segment to 1), and bucket each by its type word —
+// STARTER/CLASSIC/EXECUTIVE by name; everything else (SPECIAL/QUARTER/ACRE/
+// HECTARE *and* any unrecognized label such as a bare SQM size) → Special. A
+// segment that wasn't a canonical word sets `nonStandard`, which the ingest
+// surfaces as a plot_type_fallback_special flag (supervisor #3). Returns null
+// only when there is genuinely no countable content.
+// Split compounds on & / + only — NOT comma, which appears inside bracketed
+// sizes ("[1,200SQM]") and would shatter a number.
+const SEGMENT_SPLIT_RE = /\s*[&+]\s*/;
+// A count is leading digits FOLLOWED BY whitespace ("1 450SQM" → 1). Digits that
+// run straight into a size ("450SQM") are the size, not a count → default to 1.
+const LEADING_COUNT_RE = /^(\d+)\s+/;
+const ANY_SQM_RE = /(\d+)\s*SQM/i;
+const KNOWN_SPECIAL_WORD_RE = /\b(SPECIAL|QUARTER|ACRE|ACRES|HECTAR|HECTARE|HECTARES)\b/i;
 
 export function parseWeeklySalesPlotType(raw: unknown): ParsedWeeklyPlot | null {
   if (typeof raw !== 'string') return null;
-  const m = WEEKLY_RE.exec(raw);
-  if (!m) return null;
-  const count = Number.parseInt(m[1], 10);
-  if (!Number.isFinite(count) || count < 1) return null;
-  const word = m[2].toUpperCase();
-  // Only extract size if the bracket content is the {N}SQM form;
-  // free-text annotations (e.g. "cornerpiece") leave sizeSqm null.
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const segments = trimmed.split(SEGMENT_SPLIT_RE).map((s) => s.trim()).filter(Boolean);
+  if (segments.length === 0) return null;
+
+  let totalCount = 0;
   let sizeSqm: number | null = null;
-  if (m[3]) {
-    const sm = BRACKET_SQM_RE.exec(m[3]);
-    if (sm) sizeSqm = Number.parseInt(sm[1], 10);
+  let nonStandard = false;
+  const canonicals = new Set<PlotTypeName>();
+
+  for (const seg of segments) {
+    const upper = seg.toUpperCase();
+    const cm = LEADING_COUNT_RE.exec(seg);
+    const count = cm ? Number.parseInt(cm[1], 10) : 1; // no leading number → one plot
+    if (!Number.isFinite(count) || count < 1) continue;
+    totalCount += count;
+
+    let canonical: PlotTypeName;
+    if (/\bSTARTER\b/.test(upper)) canonical = 'Starter';
+    else if (/\bCLASSIC\b/.test(upper)) canonical = 'Classic';
+    else if (/\bEXECUTIVE\b/.test(upper)) canonical = 'Executive';
+    else if (KNOWN_SPECIAL_WORD_RE.test(upper)) canonical = 'Special'; // recognized Special synonym
+    else { canonical = 'Special'; nonStandard = true; } // bare size / typo → Special, flagged
+    canonicals.add(canonical);
+
+    const sm = ANY_SQM_RE.exec(seg);
+    if (sm && sizeSqm === null) sizeSqm = Number.parseInt(sm[1], 10);
   }
 
-  let canonicalName: PlotTypeName;
-  if (word === 'STARTER') canonicalName = 'Starter';
-  else if (word === 'CLASSIC') canonicalName = 'Classic';
-  else if (word === 'EXECUTIVE') canonicalName = 'Executive';
-  else canonicalName = 'Special'; // SPECIAL, QUARTER, ACRE(S), HECTAR(E)(S) all bucket here
+  if (totalCount < 1) return null;
 
-  return { canonicalName, count, sizeSqm };
+  // Single canonical across all segments → use it; mixed types collapse to Special
+  // (the row carries one plot_type_id, and a mixed land cell is itself non-standard).
+  let canonicalName: PlotTypeName;
+  if (canonicals.size === 1) {
+    canonicalName = [...canonicals][0];
+  } else {
+    canonicalName = 'Special';
+    nonStandard = true;
+  }
+
+  return { canonicalName, count: totalCount, sizeSqm, nonStandard };
 }
 
 // Customer File: either "{N}SQM" or "{count} {UNIT}".

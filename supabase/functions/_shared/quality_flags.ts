@@ -33,6 +33,14 @@ export const QUALITY_FLAGS = {
   // in plot_size_raw and the full row in raw_row.
   UNPARSEABLE_PLOT_TYPE: 'unparseable_plot_type',
 
+  // Weekly Sales: a PLOT TYPE cell used a non-canonical label (a bare size like
+  // "450SQM", a typo, or a compound like "1 450SQM & 1 380SQM") rather than one
+  // of the four canonical words. Per supervisor (2026-06-11): every entry on
+  // this sheet is land, so the plot(s) are still COUNTED and bucketed as Special
+  // instead of dropped. Flagged (not silently reconciled, supervisor #3) so the
+  // non-standard entry stays visible; detail carries the raw cell text.
+  PLOT_TYPE_FALLBACK_SPECIAL: 'plot_type_fallback_special',
+
   // Date cell unparseable as a real date (covers stray strings, blank, garbage).
   UNPARSEABLE_DATE: 'unparseable_date',
 

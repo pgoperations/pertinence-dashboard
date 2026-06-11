@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "test": "vitest",
     "smoke:sheets": "node --env-file=.env.local scripts/smoke-test-sheets.mjs",
+    "check:carryover": "node --env-file=.env.local scripts/check-year-carryover.mjs",
     "dump:canonicals": "node --env-file=.env.local scripts/dump-bank-deposit-canonicals.mjs",
     "dump:cs-canonicals": "node --env-file=.env.local scripts/dump-customer-support-canonicals.mjs",
     "verify:marketing": "node --env-file=.env.local scripts/verify-marketing-ingest.mjs",

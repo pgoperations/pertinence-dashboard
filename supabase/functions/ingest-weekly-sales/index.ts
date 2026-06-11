@@ -38,6 +38,7 @@ import {
 import { QUALITY_FLAGS, type QualityFlags } from '../_shared/quality_flags.ts';
 import { handlePreflight, jsonResponse } from '../_shared/cors.ts';
 import { discoverYearTabs } from '../_shared/yearTabs.ts';
+import { buildIdsByTab, sweepStaleRows } from '../_shared/sweepStaleRows.ts';
 
 const SOURCE_SHEET = 'bank_deposit_mirror';
 // Year-agnostic discovery — picks up "2027 Weekly Sales Report" automatically
@@ -207,6 +208,9 @@ Deno.serve(async (req) => {
       if (parsedPlot) {
         plot_type_id = plotTypeLookup.get(parsedPlot.canonicalName) ?? null;
         plot_count = parsedPlot.count;
+        // Non-canonical naming (bare size, typo, compound) → counted as Special
+        // but surfaced, not silently reconciled (supervisor #3).
+        if (parsedPlot.nonStandard) flags[QUALITY_FLAGS.PLOT_TYPE_FALLBACK_SPECIAL] = plotTypeRaw;
       } else if (plotTypeRaw) {
         flags[QUALITY_FLAGS.UNPARSEABLE_PLOT_TYPE] = plotTypeRaw;
       }
@@ -255,6 +259,14 @@ Deno.serve(async (req) => {
       upserted += chunk.length;
     }
 
+    // Reconcile to exactly what this run produced — see _shared/sweepStaleRows.ts.
+    const orphansDeleted = await sweepStaleRows(
+      supabase,
+      'weekly_sales',
+      SOURCE_SHEET,
+      buildIdsByTab(parsed),
+    );
+
     const { data: refreshResult, error: refreshError } = await supabase
       .rpc('refresh_plot_sales_monthly');
     if (refreshError) throw new Error(`Aggregate refresh failed: ${refreshError.message}`);
@@ -274,6 +286,7 @@ Deno.serve(async (req) => {
       source: { sheet: SOURCE_SHEET, tabs: yearTabs.map((t) => t.tab) },
       rowsRead,
       rowsUpserted: upserted,
+      orphansDeleted,
       blankSkipped,
       dateMarkerSkipped,
       flagCounts,

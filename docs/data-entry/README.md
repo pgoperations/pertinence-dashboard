@@ -4,16 +4,17 @@ This folder is the handover guide for the Google Sheets that feed the Pertinence
 
 ## Read first
 
-- **[00-common.md](00-common.md) — Common Rules.** How the dashboard reads sheets, universal rules that apply to every sheet, the process for adding new locations / purposes / categories, troubleshooting, and the glossary. ~10 minutes; read once.
+- **[00-common.md](00-common.md) — Common Rules.** How the dashboard reads sheets, universal rules that apply to every sheet, the process for adding new locations / purposes / categories, **the year-rollover process for 2027 and beyond ([§6](00-common.md#6-starting-a-new-year-2027-and-beyond))**, troubleshooting, and the glossary. ~10 minutes; read once.
 
 ## By department
 
 | Department | Document | Sheet(s) you own |
 | --- | --- | --- |
 | Sales & Finance | [01-sales-and-finance.md](01-sales-and-finance.md) | Bank Deposit Mirror (tabs: `2026 LAND`, `2026 Weekly Sales Report`, `2026 Customer File`) |
-| Marketing | [02-marketing.md](02-marketing.md) | Marketing Fund Expense Sheet (one tab per month) |
+| Marketing | [02-marketing.md](02-marketing.md) | Marketing Fund Expense Sheet (one tab per month) **+** the `Digital Marketing` tab on the Marketing Team Reporting Template (it's a Marketing-page sub-section on the dashboard) |
 | Customer Support | [03-customer-support.md](03-customer-support.md) | MASTER SHEET - CUSTOMER SUPPORT (one tab per rep) |
 | Realtor Management | [04-realtor-management.md](04-realtor-management.md) | Marketing Team Reporting Template (tab: `2026 Realtors Managers Weekly Report`) |
+| Media & Content | [05-media-content.md](05-media-content.md) | Marketing Team Reporting Template (tab: `Media Team Reporting`) |
 
 ## How to use these documents
 
@@ -24,4 +25,4 @@ This folder is the handover guide for the Google Sheets that feed the Pertinence
 
 ---
 
-*Owner: Pertinence Group Operations. Last reviewed: 2026-05-29.*
+*Owner: Pertinence Group Operations. Last reviewed: 2026-06-05.*

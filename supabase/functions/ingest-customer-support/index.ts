@@ -82,6 +82,7 @@ import {
 } from '../_shared/parseCustomerSupport.ts';
 import { QUALITY_FLAGS, type QualityFlags } from '../_shared/quality_flags.ts';
 import { handlePreflight, jsonResponse } from '../_shared/cors.ts';
+import { buildIdsByTab, sweepStaleRows } from '../_shared/sweepStaleRows.ts';
 
 const SOURCE_SHEET = 'customer_support_master';
 // Read includes the header row (row 1) so we can validate each discovered tab
@@ -349,6 +350,18 @@ Deno.serve(async (req) => {
       upserted += chunk.length;
     }
 
+    // Reconcile each rep tab to exactly what this run produced — see
+    // _shared/sweepStaleRows.ts. This also closes the documented "no stale-row
+    // sweep" gap: editing a composite cell from `A, B` to just `A` used to leave
+    // the old `row-N-2` (B) record counted forever. Per-tab keying means an
+    // out-of-scope rep tab's rows are left untouched (not in this run's id set).
+    const orphansDeleted = await sweepStaleRows(
+      supabase,
+      'customer_support_logs',
+      SOURCE_SHEET,
+      buildIdsByTab(allRows),
+    );
+
     const { data: refreshResult, error: refreshError } =
       await supabase.rpc('refresh_customer_support_monthly');
     if (refreshError) throw new Error(`Aggregate refresh failed: ${refreshError.message}`);
@@ -372,6 +385,7 @@ Deno.serve(async (req) => {
       unmappedReps,
       tabStats,
       rowsUpserted: upserted,
+      orphansDeleted,
       flagCounts,
       aggregateRowsInserted: refreshResult,
     });

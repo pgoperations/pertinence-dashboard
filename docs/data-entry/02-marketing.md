@@ -2,9 +2,9 @@
 
 > **Before reading this, read [00-common.md](00-common.md).** It covers universal rules (date formatting, money formatting, sheet structure) that apply to every sheet, including yours. This document only covers what's specific to your sheet.
 
-**Sheet you own:** Marketing Fund Expense Sheet.
+**Sheets you own:** Marketing Fund Expense Sheet **and** the `Digital Marketing` tab on the Marketing Team Reporting Template (the latter is a *different spreadsheet*, but it appears as a sub-section on the **Marketing** page of the dashboard, so it's documented here — see [§Digital Marketing](#digital-marketing)).
 
-**Source of truth for:** marketing spend by category and month.
+**Source of truth for:** marketing spend by category and month (Fund Expense), and per-campaign digital ad performance (Digital Marketing tab).
 
 ---
 
@@ -61,4 +61,48 @@ The dashboard tries to categorize each expense row in two ways:
 
 ---
 
-*Owner: Marketing team. Last reviewed: 2026-05-29.*
+## Digital Marketing
+
+> **Different sheet, same dashboard page.** Digital Marketing data lives in the **Marketing Team Reporting Template** spreadsheet, on the **`Digital Marketing`** tab — *not* in the Marketing Fund Expense sheet above. It's documented here because it appears as a sub-section on the **Marketing** page of the dashboard. (That spreadsheet also holds the Realtor Managers and Media tabs — see [04-realtor-management.md](04-realtor-management.md) and [05-media-content.md](05-media-content.md).)
+
+**Source of truth for:** per-campaign digital ad performance (reach, impressions, leads, spend) by month.
+
+### How the tab is laid out
+
+The tab holds one **year section** stacked vertically. The 2026 section begins at a cell containing the literal year **`2026`**, and below it:
+
+- A row of **month names** (`JANUARY`, `FEBRUARY`, …) spread across the columns — one block per month.
+- Under each month, a **`Week 1 | Week 2 | … | Week 5 | TOTAL`** header row.
+- Inside each month block, one or more **campaign sub-blocks**, each made of:
+  - a **`Campaign Name`** header row — the campaign's name typed into the week columns it ran in, then
+  - a set of **metric rows** beneath it: `Reach`, `Impression`, `Leads`, `Cost Per Lead`, `Cost`, and (where used) `Visits`, `Follows`, `Cost Per Result (Combined)`.
+
+A single value = (month, campaign, metric, week).
+
+### Rules that keep it readable by the dashboard
+
+- **Keep the `2026` year-marker cell.** The dashboard finds the whole section by it. (For 2027, see below.)
+- **Keep the `Week 1 … TOTAL` header** above each month's blocks, and the **month name** in/above each block — these anchor every value.
+- **Start each campaign with a `Campaign Name` row**, and **type the campaign name into the week columns it ran in.** If one sub-block runs several campaigns across the weeks (e.g. `MASTERCLASS 1` in Week 1, `MASTERCLASS 2` in Weeks 2–3, `MASTERCLASS 3` in Weeks 4–5), put each name in its own week columns — the dashboard splits them into separate campaign lines automatically and tags the block so the supervisor can see the rotation.
+- **Keep metric labels consistent** (`Reach`, `Impression`, `Leads`, …). A reworded or misspelled label becomes an unknown metric and is skipped. For a genuinely new metric, tell the dashboard owner so it can be registered.
+- **Values:**
+  - Plain numbers for counts.
+  - `Cost` / `Cost Per Lead` cells **may** include ₦ and commas (`₦18,430.43`) — the dashboard strips them — but plain numbers are cleaner.
+  - **`NIL`** (or blank) = "ran, but the count was zero" → read as 0.
+  - **`-`** (dash) = "not applicable" → read as no value.
+  - Any other text is read as 0 and flagged for the supervisor.
+- The dashboard **ignores the per-week `Cost Per Lead` cells** and instead shows a derived **total cost ÷ total leads** — because adding weekly rates together is not meaningful. Just enter the weekly `Cost` and `Leads` counts; the effective rate is computed for you.
+- The **first sub-block in each month is a blank template** (metric labels, no values) — leave it blank; the dashboard skips it.
+
+### Starting a new year (2027)
+
+Unlike the monthly expense tabs, Digital Marketing's new year is a **new block inside the same tab**, not a new tab:
+
+1. **Below** the 2026 section, add a new block headed by a cell containing the literal **`2027`**.
+2. Recreate the same structure under it (month names → `Week 1 … TOTAL` header → campaign sub-blocks). Easiest is to **copy the 2026 block** down and clear its values.
+3. Keep the whole block **above sheet row ~1500** (the dashboard's read window). If it would fall below that, tell the dashboard owner.
+4. No notification needed otherwise — the dashboard finds the `2027` block automatically. See [00-common §6](00-common.md#6-starting-a-new-year-2027-and-beyond).
+
+---
+
+*Owner: Marketing team. Last reviewed: 2026-06-05.*

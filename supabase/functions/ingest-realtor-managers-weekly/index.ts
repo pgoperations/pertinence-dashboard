@@ -33,6 +33,7 @@ import {
 } from '../_shared/parseRealtorMetricsTab.ts';
 import { handlePreflight, jsonResponse } from '../_shared/cors.ts';
 import { discoverYearTabs } from '../_shared/yearTabs.ts';
+import { buildIdsByTab, sweepStaleRows } from '../_shared/sweepStaleRows.ts';
 
 const SOURCE_SHEET = 'marketing_team_reporting_template';
 
@@ -136,6 +137,16 @@ Deno.serve(async (req) => {
       upserted += chunk.length;
     }
 
+    // Reconcile to exactly what this run produced — see _shared/sweepStaleRows.ts.
+    // IDs are semantic (stable), so this only fires when a metric_key disappears
+    // from a month, but it keeps the table honest if the source layout changes.
+    const orphansDeleted = await sweepStaleRows(
+      supabase,
+      'realtor_metrics_monthly',
+      SOURCE_SHEET,
+      buildIdsByTab(upsertRows),
+    );
+
     const flagCounts: Record<string, number> = {};
     for (const r of allRows) {
       for (const key of Object.keys(r.quality_flags)) {
@@ -150,6 +161,7 @@ Deno.serve(async (req) => {
       source: { sheet: SOURCE_SHEET },
       tabs: tabResults,
       rowsUpserted: upserted,
+      orphansDeleted,
       flagCounts,
     });
   } catch (err) {

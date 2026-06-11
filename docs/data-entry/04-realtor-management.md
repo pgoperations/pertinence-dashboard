@@ -60,11 +60,15 @@ The dashboard recognizes each metric by its **label text** against a known list 
 
 ### Adding a new year
 
-The dashboard ingests one tab per year, configured by year in code:
+The dashboard reads **one tab per year, discovered automatically by name** (changed 2026-06-05 — an earlier version of this document said the owner had to register each new tab; that is no longer true).
 
-- `2026 Realtors Managers Weekly Report` is the only tab read today.
-- For 2027, the supervisor will create a new tab `2027 Realtors Managers Weekly Report` and **must notify the dashboard owner** to register the new tab + year in the ingest configuration.
-- Until that registration happens, the new tab will be silently ignored.
+- For 2027, **duplicate** `2026 Realtors Managers Weekly Report` → rename the copy `2027 Realtors Managers Weekly Report` (keep the month-block layout identical), then clear the copy's data and start entering 2027 months.
+- **No notification or code change is needed** — the dashboard finds any `YYYY Realtors Managers Weekly Report` tab by name on the next pull. The owner can confirm with the read-only `pnpm check:carryover`.
+- **Keep the 2026 tab** — don't rename or delete it. See [00-common §6](00-common.md#6-starting-a-new-year-2027-and-beyond) for the universal year-rollover rules.
+
+### Other tabs in this workbook (Digital Marketing & Media)
+
+This same spreadsheet (Marketing Team Reporting Template) also holds the **Digital Marketing** and **Media Team Reporting** tabs that feed the Marketing and Media & Content dashboard pages. They have their own data-entry rules — see **[02-marketing.md §Digital Marketing](02-marketing.md#digital-marketing)** and **[05-media-content.md](05-media-content.md)**. Year-rollover: **Digital Marketing** adds a new **section inside** its tab (a literal `2027` marker, not a new tab); **Media** adds a **new tab per year** (`2027 Media Team Reporting`) just like this Realtor tab. The universal rules are in [00-common §6](00-common.md#6-starting-a-new-year-2027-and-beyond).
 
 ---
 
@@ -80,4 +84,4 @@ None of these block what you enter today. Continue entering metrics as you norma
 
 ---
 
-*Owner: Realtor Management team. Last reviewed: 2026-05-29.*
+*Owner: Realtor Management team. Last reviewed: 2026-06-05.*
