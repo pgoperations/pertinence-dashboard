@@ -18,11 +18,11 @@ This guide has two halves:
 
 > **Companion docs already in the repo** — read these alongside this one:
 >
-> - [`docs/data-entry/`](docs/data-entry/README.md) — rules for staff *entering* data into the
+> - [`docs/data-entry/`](README.md) — rules for staff *entering* data into the
 >   source Google Sheets. Hand these to the teams that own each sheet.
-> - [`CLAUDE.md`](CLAUDE.md) — the engineering working-notes (deep detail, written for the AI coding assistant).
-> - [`PROJECT_BRIEF.md`](PROJECT_BRIEF.md), [`DESIGN_DECISIONS.md`](DESIGN_DECISIONS.md),
->   [`PROGRESS.md`](PROGRESS.md) — *why* things are built the way they are.
+> - [`CLAUDE.md`](../../CLAUDE.md) — the engineering working-notes (deep detail, written for the AI coding assistant).
+> - [`PROJECT_BRIEF.md`](../../PROJECT_BRIEF.md), [`DESIGN_DECISIONS.md`](../../DESIGN_DECISIONS.md),
+>   [`PROGRESS.md`](../../PROGRESS.md) — *why* things are built the way they are.
 
 *Last updated: 2026-06-11.*
 
@@ -81,7 +81,7 @@ If a sync shows an error in the pop-up, see Troubleshooting (§A5).
 
 | Symptom | Most likely cause | What to do |
 | --- | --- | --- |
-| A number looks wrong / doesn't match the sheet | Someone left a cell blank or typed a date/number/plot oddly in the source sheet | Check the source sheet against the data-entry rules in [`docs/data-entry/`](docs/data-entry/README.md). Don't edit to "match" the dashboard. A developer can pinpoint the exact cause with the discrepancy runbook (§B12). |
+| A number looks wrong / doesn't match the sheet | Someone left a cell blank or typed a date/number/plot oddly in the source sheet | Check the source sheet against the data-entry rules in [`docs/data-entry/`](README.md). Don't edit to "match" the dashboard. A developer can pinpoint the exact cause with the discrepancy runbook (§B12). |
 | New sheet edit isn't showing | Auto-sync hasn't ticked yet (≤15 min), or the sheet tab was renamed | Press **Sync Sheets**. If still missing, a header/tab name may have changed — see §B7. |
 | "Sync" shows an error for one source | The source sheet's structure changed, or it was un-shared from the service account | See §B5 (re-share) and §B7 (structure change). This is a developer task. |
 | Can't sign in / no reset email | Account doesn't exist, or the email is mistyped | An admin must create or confirm the account (§A6). Reset emails are only sent to real accounts. |
@@ -235,7 +235,7 @@ the next sync; see §B12), plus per-source parsers.
 variables for production): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`. These are public by design
 (the anon key ships in the browser bundle; RLS protects the data).
 
-Template: [`.env.local.example`](.env.local.example).
+Template: [`.env.local.example`](../../.env.local.example).
 
 ## B5. Routine maintenance tasks
 
@@ -287,7 +287,7 @@ To fix:
    `supabase functions deploy <name> --no-verify-jwt`.
 4. Re-run and confirm row counts look right.
 
-**Prevention:** the [`docs/data-entry/`](docs/data-entry/README.md) standards tell the teams *not* to
+**Prevention:** the [`docs/data-entry/`](README.md) standards tell the teams *not* to
 rename headers/tabs without telling the dashboard owner. Keep those in front of staff.
 
 **Note on `CLIENT  NAME`** (Bank Deposit col I) — that header has an **intentional double space**.
@@ -426,7 +426,7 @@ The flag name says what happened (full vocabulary in
 - `unknown_location` / `unknown_purpose` — a value with no canonical mapping yet (add the alias).
 - `null_sales_person` — no realtor on the row; it lands in the "Unattributed" bucket (not an error).
 
-The fix is usually a data-entry correction on the sheet (see [`docs/data-entry/`](docs/data-entry/README.md))
+The fix is usually a data-entry correction on the sheet (see [`docs/data-entry/`](README.md))
 or, for a recurring pattern, a small parser change (§B7).
 
 ### Worked example 1 — revenue over-count (over by ~₦57M)
