@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import clsx from 'clsx';
 import { useAuth } from '../hooks/useAuth';
 import {
@@ -30,6 +30,10 @@ const NAV: NavItem[] = [
 
 export function AppShell() {
   const { profile, signOut } = useAuth();
+  // The global date range lives in the URL query string (?from=&to=). Carry it
+  // onto every nav link so switching sections keeps the selected range instead
+  // of resetting to the default preset.
+  const { search } = useLocation();
   // Prefer full_name → email local-part → 'U' (for "User"). Avoids the bare
   // '?' the avatar used to show when profile had no full_name and the email
   // tokenizer produced no letters.
@@ -92,7 +96,7 @@ export function AppShell() {
             {NAV.map(({ to, label, Icon }) => (
               <NavLink
                 key={to}
-                to={to}
+                to={{ pathname: to, search }}
                 className={({ isActive }) =>
                   clsx(
                     'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors duration-200 cursor-pointer',
@@ -146,7 +150,7 @@ export function AppShell() {
           {NAV.map(({ to, shortLabel, Icon }) => (
             <NavLink
               key={to}
-              to={to}
+              to={{ pathname: to, search }}
               className={({ isActive }) =>
                 clsx(
                   'flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors duration-200 cursor-pointer',

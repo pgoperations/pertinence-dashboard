@@ -24,14 +24,17 @@ export type YearTab = { tab: string; year: number };
 // IMPORTANT: pass a NON-global RegExp (no `/g` flag) — `exec` on a global regex
 // is stateful and would skip matches across calls.
 //
-// `minYear` guards against accidentally ingesting an ancient archive tab; the
-// upper bound (current UTC year + 1) guards against a typo'd far-future tab
-// like "January 2099". Results are sorted oldest-year-first.
+// No lower-year floor: the data-entry standard (docs/data-entry/00-common.md §6)
+// is "add a year tab, never rename" and the dashboard is meant to read every
+// year side by side, so ANY standard-named year tab is legitimate — including
+// historical baselines like `2025 Media Team Reporting`. A previous `minYear`
+// floor silently dropped that 2025 tab; removed 2026-06-11. The only remaining
+// guard is the upper bound (current UTC year + 1), a cheap defence against a
+// typo'd far-future tab like "3026 LAND". Results are sorted oldest-year-first.
 export async function discoverYearTabs(
   accessToken: string,
   spreadsheetId: string,
   pattern: RegExp,
-  minYear = 2026,
 ): Promise<YearTab[]> {
   const maxYear = new Date().getUTCFullYear() + 1;
   const tabs = await getSheetTabs(accessToken, spreadsheetId);
@@ -40,7 +43,7 @@ export async function discoverYearTabs(
     const m = pattern.exec(meta.title.trim());
     if (!m) continue;
     const year = Number(m[1]);
-    if (Number.isFinite(year) && year >= minYear && year <= maxYear) {
+    if (Number.isFinite(year) && year <= maxYear) {
       out.push({ tab: meta.title, year });
     }
   }

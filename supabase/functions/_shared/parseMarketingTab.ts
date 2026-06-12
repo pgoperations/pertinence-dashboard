@@ -1,11 +1,11 @@
 // Marketing Fund Expense sheet helpers.
 //
-// The supervisor's source sheet has one tab per month. Tab naming is
-// inconsistent across years (bare "January" for 2025, explicit "January 2026"
-// for 2026, etc.) — for v1 we only ingest tabs matching `^[A-Za-z]+ <YEAR>$`
-// for years we explicitly opt into. Earlier years are out of scope per the
-// project brief (H1 2025 PDF is the baseline; the dashboard ingests 2026
-// forward).
+// The supervisor's source sheet has one tab per month, named `<Month> <Year>`
+// (e.g. "September 2025", "January 2026"). Any tab matching that structure is
+// ingested — no lower-year floor — so renamed/added historical month tabs
+// (e.g. the 2024/2025 expense tabs) are picked up the same as current ones,
+// per the data-entry standard (docs/data-entry/00-common.md). Bare month names
+// with no year ("January") don't match the structure and are correctly ignored.
 //
 // Header row detection: the expenditure block uses the literal header
 // sequence `Date | Description | Total | Category` starting at some column.
@@ -27,17 +27,17 @@ const MONTH_NAMES: Record<string, number> = {
   september: 9, october: 10, november: 11, december: 12,
 };
 
-// Years the dashboard ingests. Year-agnostic from 2026 forward (carryover fix
-// 2026-06-04): a "January 2027" tab is picked up automatically. Upper bound is
-// current UTC year + 1 so a typo'd far-future tab ("May 2099") is ignored.
-const MIN_INGEST_YEAR = 2026;
-
 export type TabPeriod = { year: number; month: number };
 
 // Parses a tab name like "May 2026" → { year: 2026, month: 5 }.
-// Returns null for any tab we don't ingest (bare month names, `_Categories`,
-// years outside INGEST_YEARS, etc.). Trim trailing whitespace because the
-// supervisor's tab names carry stray trailing spaces ("September " etc.).
+// Returns null for any tab that isn't a `<Month> <Year>` expense tab (bare
+// month names, `_Categories`, etc.). No lower-year floor — any conforming month
+// tab is ingested, so historical years (2024/2025) carry over like every other
+// source; `period_year` keeps them separate in the DB and the date-range
+// selector switches between them. The only guard is the upper bound (current
+// UTC year + 1), a cheap defence against a typo'd far-future tab ("May 2099").
+// Trim trailing whitespace because the supervisor's tab names carry stray
+// trailing spaces ("September " etc.).
 export function parseMarketingTabName(name: string): TabPeriod | null {
   const trimmed = name.trim();
   const m = /^([A-Za-z]+)\s+(\d{4})$/.exec(trimmed);
@@ -46,7 +46,7 @@ export function parseMarketingTabName(name: string): TabPeriod | null {
   const year = Number(m[2]);
   if (!month) return null;
   const maxYear = new Date().getUTCFullYear() + 1;
-  if (year < MIN_INGEST_YEAR || year > maxYear) return null;
+  if (year > maxYear) return null;
   return { year, month };
 }
 

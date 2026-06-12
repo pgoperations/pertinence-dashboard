@@ -80,7 +80,19 @@ const SKIP_LABELS = new Set<string>([
 
 const NIL_VARIANTS = new Set(['nil', 'nl', 'nll']);
 const DASH_VARIANTS = new Set(['-', '—', '–']);
-const WEEK_LABEL_RE = /^week\s*([1-5])$/i;
+// Week headers anchor each block. Accept both the standard digit form
+// ("WEEK 1".."WEEK 5") and the word form ("WEEK ONE".."WEEK FIVE") the
+// supervisor used on some early-2025 months — same week, two spellings.
+const WEEK_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+const WEEK_LABEL_RE = /^week\s*([1-5]|one|two|three|four|five)$/i;
+
+// Returns the 1..5 week number for a "WEEK n" / "WEEK <word>" label, else null.
+function weekLabelNumber(text: string): number | null {
+  const m = text.trim().match(WEEK_LABEL_RE);
+  if (!m) return null;
+  const tok = m[1].toLowerCase();
+  return WEEK_WORDS[tok] ?? Number(tok);
+}
 
 const MAX_WEEK_BLOCK_ROWS = 60;
 
@@ -188,9 +200,9 @@ function collectWeeksInRow(
     if (typeof cell !== 'string') continue;
     const text = cell.trim();
     if (!text) continue;
-    const weekMatch = text.match(WEEK_LABEL_RE);
-    if (weekMatch) {
-      weeks.push({ week: Number(weekMatch[1]), startCol: c });
+    const week = weekLabelNumber(text);
+    if (week !== null) {
+      weeks.push({ week, startCol: c });
     }
   }
   return weeks;

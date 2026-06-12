@@ -21,9 +21,11 @@ if (!email || !rawKey) {
   process.exit(1);
 }
 
-const MIN_YEAR = 2026;
+// No lower-year floor — mirrors _shared/yearTabs.ts. Any standard-named year
+// tab is ingested (incl. historical baselines like "2025 Media Team Reporting");
+// the only guard is the upper bound against a typo'd far-future tab.
 const MAX_YEAR = new Date().getUTCFullYear() + 1; // matches the ingests' upper bound
-const inRange = (y) => Number.isFinite(y) && y >= MIN_YEAR && y <= MAX_YEAR;
+const inRange = (y) => Number.isFinite(y) && y <= MAX_YEAR;
 
 // Mirrors NON_REP_TABS in _shared/parseCustomerSupport.ts.
 const NON_REP_TABS = new Set(
@@ -79,7 +81,7 @@ async function listTabTitles(spreadsheetId) {
   return (res.data.sheets ?? []).map((s) => s.properties.title);
 }
 
-console.log(`Year-tab carryover check — ingest window ${MIN_YEAR}..${MAX_YEAR}\n`);
+console.log(`Year-tab carryover check — ingest window: any year up to ${MAX_YEAR}\n`);
 
 let problems = 0;
 

@@ -11,10 +11,11 @@
 //   1. Multi-tab. The source has one tab per month ("January 2026", "May 2026",
 //      etc.). Tabs are discovered dynamically via getSheetTabs() — adding next
 //      month is supervisor work only, no code change. The same applies across
-//      years: any `<Month> <Year>` tab from 2026 forward (e.g. "January 2027")
-//      is ingested automatically — carryover needs no code change. Tabs whose
-//      names don't match `<Month> <Year>` in range are silently ignored (legacy
-//      bare "January" tabs are 2025 H1 and out of scope; `_Categories` is the
+//      years: any `<Month> <Year>` tab (e.g. "September 2025", "January 2027")
+//      is ingested automatically — no lower-year floor, so historical and
+//      future months both carry over with no code change. Tabs whose names
+//      don't match `<Month> <Year>` are silently ignored (legacy bare "January"
+//      tabs with no year don't match the structure; `_Categories` is the
 //      dropdown source).
 //
 //   2. Period anchor is the TAB NAME (DESIGN_DECISIONS rule). In-cell dates

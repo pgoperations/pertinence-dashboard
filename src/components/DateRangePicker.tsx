@@ -3,10 +3,11 @@ import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 import {
   DATE_RANGE_PRESETS,
+  describeRange,
+  EARLIEST_DATA_YEAR,
   formatRangeShort,
   monthRange,
   parseIso,
-  presetLabel,
   singleMonthOf,
   toIso,
 } from '../lib/dateRange';
@@ -14,12 +15,25 @@ import { useDateRange } from '../hooks/useDateRange';
 import { IconCalendar, IconCheck, IconChevronDown, IconClose } from './icons';
 import type { DateRangePresetGroup } from '../types/date-range';
 
-const GROUP_ORDER: DateRangePresetGroup[] = ['Relative', 'Quarters', 'Halves'];
-const GROUP_LABEL: Record<DateRangePresetGroup, string> = {
+const YEAR_SCOPED_GROUPS = ['Quarters', 'Halves'] as const;
+// 'Special' (full-year / all-time) is dropdown-driven, never rendered as a
+// labelled button group, so it's excluded from the label map.
+const GROUP_LABEL: Record<Exclude<DateRangePresetGroup, 'Special'>, string> = {
   Relative: 'Quick ranges',
-  Quarters: 'Quarters (2026)',
+  Quarters: 'Quarters',
   Halves: 'Halves',
 };
+
+// Individually-listed years in the selector: from `earliestYear` (the year of
+// the dynamically-fetched earliest data date — shared with the "All time" lower
+// bound so they agree) through next year (the ingest carryover ceiling,
+// currentYear + 1).
+function yearOptions(earliestYear: number): number[] {
+  const max = new Date().getFullYear() + 1;
+  const years: number[] = [];
+  for (let y = Math.min(earliestYear, max); y <= max; y++) years.push(y);
+  return years;
+}
 
 // The dropdown is rendered in a portal to document.body. The app header carries
 // `backdrop-blur`, and any element with backdrop-filter becomes the containing
@@ -40,12 +54,32 @@ function useIsDesktop(): boolean {
 }
 
 export function DateRangePicker() {
-  const { range, presetId, setPreset, setRange } = useDateRange();
+  const { range, presetId, setPreset, setRange, earliestDate } = useDateRange();
   const isDesktop = useIsDesktop();
   const [open, setOpen] = useState(false);
   const [customFrom, setCustomFrom] = useState(range.from);
   const [customTo, setCustomTo] = useState(range.to);
   const [customError, setCustomError] = useState<string | null>(null);
+  // Year the quarter / half filters resolve against. Seeded from the active
+  // range and kept in sync when the range changes from elsewhere. Under
+  // "All time" there's no single year, so the Q/H scope falls back to the
+  // current year (clicking a quarter/half then jumps out of all-time).
+  const earliestYear = parseIso(earliestDate)?.getFullYear() ?? EARLIEST_DATA_YEAR;
+  const years = yearOptions(earliestYear);
+  const currentYear = new Date().getFullYear();
+  const isAllTime = presetId === 'all-time';
+  const yearOfRange = isAllTime
+    ? currentYear
+    : parseIso(range.from)?.getFullYear() ?? currentYear;
+  const [selectedYear, setSelectedYear] = useState(yearOfRange);
+  useEffect(() => {
+    setSelectedYear(yearOfRange);
+  }, [yearOfRange]);
+  // The year dropdown shows "All time" or the scoped year.
+  const yearSelectValue = isAllTime ? 'all-time' : String(selectedYear);
+  // Quick ranges are relative to *today*, so they only make sense for the
+  // current year — greyed out (and not highlighted) when another year is picked.
+  const quickRangesEnabled = !isAllTime && selectedYear === currentYear;
   // Desktop anchors the popover under the trigger via measured coords (it lives
   // in a body portal, so it can't use CSS `absolute` relative to the trigger).
   const [coords, setCoords] = useState<{ top: number; right: number } | null>(null);
@@ -104,7 +138,7 @@ export function DateRangePicker() {
   const triggerLabel =
     presetId === 'custom'
       ? singleMonthOf(range)?.label ?? formatRangeShort(range)
-      : presetLabel(presetId);
+      : describeRange(presetId, range);
 
   function applyCustom() {
     const from = parseIso(customFrom);
@@ -127,6 +161,19 @@ export function DateRangePicker() {
     if (r) {
       setRange(r);
       setOpen(false);
+    }
+  }
+
+  // Year dropdown: "All time" applies the all-data range; a year applies that
+  // whole calendar year. Either way the popover stays open so the user can
+  // refine with a quarter / half / month below.
+  function applyYearSelection(value: string) {
+    if (value === 'all-time') {
+      setPreset('all-time');
+    } else {
+      const year = Number(value);
+      setSelectedYear(year);
+      setPreset('full-year', year);
     }
   }
 
@@ -192,23 +239,88 @@ export function DateRangePicker() {
                 )}
 
                 <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-2 md:p-3">
-                  {GROUP_ORDER.map((group) => {
+                  {/* Quick ranges (relative to today — current year only) */}
+                  <div className="mb-2">
+                    <div className="flex items-baseline justify-between px-1 pb-1 pt-1">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-brand-400">
+                        {GROUP_LABEL.Relative}
+                      </span>
+                      {!quickRangesEnabled && (
+                        <span className="text-[10px] font-medium normal-case text-brand-400">
+                          {currentYear} only
+                        </span>
+                      )}
+                    </div>
+                    <ul className="grid grid-cols-2 gap-1">
+                      {DATE_RANGE_PRESETS.filter((p) => p.group === 'Relative').map((p) => {
+                        const active = presetId === p.id && quickRangesEnabled;
+                        return (
+                          <li key={p.id}>
+                            <button
+                              type="button"
+                              disabled={!quickRangesEnabled}
+                              onClick={() => {
+                                setPreset(p.id);
+                                setOpen(false);
+                              }}
+                              className={clsx(
+                                'flex w-full items-center justify-between gap-1 rounded-lg px-3 py-2 text-left text-sm transition-colors duration-200',
+                                !quickRangesEnabled
+                                  ? 'cursor-not-allowed text-brand-300'
+                                  : active
+                                    ? 'cursor-pointer bg-accent text-white'
+                                    : 'cursor-pointer text-brand-800 hover:bg-brand-50',
+                              )}
+                            >
+                              <span className="truncate">{p.label}</span>
+                              {active ? <IconCheck className="h-4 w-4 shrink-0" /> : null}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+
+                  {/* Year selector — "All time" or a specific year; drives the
+                      quarter / half filters below. */}
+                  <div className="mt-3 border-t border-brand-200 pt-3">
+                    <label className="block text-[10px] font-semibold uppercase tracking-wide text-brand-400">
+                      Year
+                      <select
+                        value={yearSelectValue}
+                        onChange={(e) => applyYearSelection(e.target.value)}
+                        className="mt-2 w-full cursor-pointer rounded-lg border border-brand-300 bg-white px-2.5 py-2 text-sm font-medium normal-case text-brand-900 focus:border-accent focus:ring-1 focus:ring-accent"
+                      >
+                        <option value="all-time">All time</option>
+                        {[...years].reverse().map((y) => (
+                          <option key={y} value={y}>
+                            {y}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  {/* Year-scoped quarters + halves */}
+                  {YEAR_SCOPED_GROUPS.map((group) => {
                     const items = DATE_RANGE_PRESETS.filter((p) => p.group === group);
                     if (items.length === 0) return null;
                     return (
-                      <div key={group} className="mb-2 last:mb-0">
-                        <div className="px-1 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-brand-400">
+                      <div key={group} className="mt-3">
+                        <div className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-brand-400">
                           {GROUP_LABEL[group]}
                         </div>
                         <ul className="grid grid-cols-2 gap-1">
                           {items.map((p) => {
-                            const active = presetId === p.id;
+                            // Active only when the live range is this preset AND its year
+                            // matches the year currently selected in the dropdown above.
+                            const active = presetId === p.id && yearOfRange === selectedYear;
                             return (
                               <li key={p.id}>
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setPreset(p.id);
+                                    setPreset(p.id, selectedYear);
                                     setOpen(false);
                                   }}
                                   className={clsx(
@@ -218,7 +330,7 @@ export function DateRangePicker() {
                                       : 'text-brand-800 hover:bg-brand-50',
                                   )}
                                 >
-                                  <span className="truncate">{p.label}</span>
+                                  <span className="truncate">{`${p.label} ${selectedYear}`}</span>
                                   {active ? <IconCheck className="h-4 w-4 shrink-0" /> : null}
                                 </button>
                               </li>
@@ -236,8 +348,8 @@ export function DateRangePicker() {
                       <input
                         type="month"
                         value={monthValue}
-                        min="2025-01"
-                        max="2026-12"
+                        min={`${years[0]}-01`}
+                        max={`${years[years.length - 1]}-12`}
                         onChange={(e) => {
                           if (e.target.value) applyMonth(e.target.value);
                         }}
