@@ -85,6 +85,31 @@ export type KpiBreakdowns = {
   totalRevenueInflow: StageBreakdownEntry[];
 };
 
+// A single underlying record behind a KPI — surfaced in the drill-downs so a
+// presenter can speak to the individual transactions, not just the totals.
+export type SalesTxnDetail = {
+  /** ISO date (YYYY-MM-DD): week_ending for plots, txn_date for received. */
+  date: string;
+  customerName: string | null;
+  salesPerson: string | null;
+  locationName: string | null;
+  /** Plot type/size (weekly_sales) or purpose name (bank_deposits). */
+  detail: string | null;
+  /** Plots in this row — present for weekly_sales rows, null for bank deposits. */
+  plotCount: number | null;
+  /** Naira: payable (weekly_sales) or amount received (bank_deposits). */
+  amount: number;
+};
+
+export type KpiTransactions = {
+  /** weekly_sales rows — drives both the Plots-sold and Total-payable detail. */
+  weeklySales: SalesTxnDetail[];
+  /** bank_deposits rows classified into the Initial / Outright stage. */
+  initialReceived: SalesTxnDetail[];
+  /** bank_deposits rows classified into the Further / Balance stage. */
+  furtherReceived: SalesTxnDetail[];
+};
+
 export type SalesMonthBucket = {
   /** YYYY-MM */
   month: string;
@@ -175,6 +200,8 @@ export type WeekBucket = {
 export type SalesPanelData = {
   kpis: SalesKpis;
   kpiBreakdowns: KpiBreakdowns;
+  /** Per-KPI transaction-level detail for the drill-downs. */
+  kpiTransactions: KpiTransactions;
   monthly: SalesMonthBucket[];
   pivot: PlotPivotRow[];
   byLocation: RevenueByLocationRow[];
@@ -216,9 +243,10 @@ export async function loadSalesPanelData(
   range: DateRange,
   stages: PurposeStages,
 ): Promise<SalesPanelData> {
-  const [bd, ps, sbl, locationNameById] = await Promise.all([
+  const [bd, ps, ws, sbl, locationNameById] = await Promise.all([
     fetchBankDeposits(range),
     fetchPlotSalesMonthly(range),
+    fetchWeeklySales(range),
     fetchSalesByLocationMonthly(range),
     fetchLocationNames(),
   ]);
@@ -272,6 +300,9 @@ export async function loadSalesPanelData(
   const dealCountByFingerprint = new Map<string, number>();
   const variantCountsByFingerprint = new Map<string, Map<string, number>>();
   const allTxns: TopDealEntry[] = [];
+  // Per-stage transaction detail for the Initial / Further KPI drill-downs.
+  const initialTxns: SalesTxnDetail[] = [];
+  const furtherTxns: SalesTxnDetail[] = [];
   const addMonthPurpose = (
     map: Map<string, Map<string, number>>,
     month: string,
@@ -313,6 +344,21 @@ export async function loadSalesPanelData(
       const bucket = ensureMonth(monthKey);
       bucket.fees += amount;
       addMonthPurpose(feesByMonthPurpose, monthKey, purposeName, amount);
+    }
+
+    // Transaction-level detail for the Initial / Further drill-downs. Skip
+    // zero-amount rows (noise that contributes nothing to the KPI total).
+    if (amount !== 0 && (stage === 'initial' || stage === 'further')) {
+      const detail: SalesTxnDetail = {
+        date: row.txn_date,
+        customerName: row.customer_name,
+        salesPerson: row.sales_person,
+        locationName: row.location_id ? (locationNameById.get(row.location_id) ?? null) : null,
+        detail: purposeName === UNKNOWN_PURPOSE ? null : purposeName,
+        plotCount: null,
+        amount,
+      };
+      (stage === 'initial' ? initialTxns : furtherTxns).push(detail);
     }
 
     if (row.updated_at && (!bankDepositRefreshedAt || row.updated_at > bankDepositRefreshedAt)) {
@@ -562,6 +608,36 @@ export async function loadSalesPanelData(
     ].filter((e) => e.amount > 0) as StageBreakdownEntry[],
   };
 
+  // --- Per-KPI transaction detail (drill-downs) ---------------------------
+  // weekly_sales feeds both Plots-sold and Total-payable. Same source as the
+  // plot_sales_monthly aggregate the KPI totals come from, so the listed rows
+  // sum back to those totals. Sorted biggest-first so a presenter leads with
+  // the deals that drove the figure.
+  const weeklySalesTxns: SalesTxnDetail[] = ws
+    .map((r) => {
+      const typeName = r.plot_type?.name ?? null;
+      const size = r.plot_size_raw?.trim() || null;
+      return {
+        date: r.week_ending as string,
+        customerName: r.customer_name,
+        salesPerson: r.sales_person,
+        locationName: r.location?.name ?? null,
+        detail: [typeName, size].filter(Boolean).join(' · ') || null,
+        plotCount: r.plot_count ?? 0,
+        amount: Number(r.amount ?? 0),
+      };
+    })
+    .sort((a, b) => b.amount - a.amount);
+
+  initialTxns.sort((a, b) => b.amount - a.amount);
+  furtherTxns.sort((a, b) => b.amount - a.amount);
+
+  const kpiTransactions: KpiTransactions = {
+    weeklySales: weeklySalesTxns,
+    initialReceived: initialTxns,
+    furtherReceived: furtherTxns,
+  };
+
   // --- Top realtors -------------------------------------------------------
   // For each fingerprint bucket, pick the most-frequently-typed raw variant
   // as the display name (ties broken alphabetically for determinism). The
@@ -610,6 +686,7 @@ export async function loadSalesPanelData(
       totalRevenueInflow,
     },
     kpiBreakdowns,
+    kpiTransactions,
     monthly,
     pivot,
     byLocation,
@@ -761,6 +838,54 @@ async function fetchPlotSalesMonthly(range: DateRange): Promise<PlotSalesRow[]> 
 
   return ((data ?? []) as unknown as PlotSalesRow[]).filter((r) => {
     const ym = r.period_year * 100 + r.period_month;
+    return ym >= fromYear * 100 + fromMonth && ym <= toYear * 100 + toMonth;
+  });
+}
+
+type WeeklySaleRow = {
+  week_ending: string | null;
+  amount: number | string | null;
+  customer_name: string | null;
+  sales_person: string | null;
+  plot_count: number | null;
+  plot_size_raw: string | null;
+  location: EmbeddedName;
+  plot_type: EmbeddedName;
+};
+
+// Per-row plot transactions behind the Plots-sold / Total-payable KPIs. Mirrors
+// fetchPlotSalesMonthly's period filter (year-month inclusive) so the rows match
+// the monthly aggregate the KPI totals are derived from rather than drifting on
+// mid-month custom ranges.
+async function fetchWeeklySales(range: DateRange): Promise<WeeklySaleRow[]> {
+  const fromYear = Number(range.from.slice(0, 4));
+  const toYear = Number(range.to.slice(0, 4));
+  const fromMonth = Number(range.from.slice(5, 7));
+  const toMonth = Number(range.to.slice(5, 7));
+
+  const rows: WeeklySaleRow[] = [];
+  const pageSize = 1000;
+  let from = 0;
+  for (;;) {
+    const { data, error } = await supabase
+      .from('weekly_sales')
+      .select(
+        'week_ending, amount, customer_name, sales_person, plot_count, plot_size_raw, location:locations(name), plot_type:plot_types(name)',
+      )
+      .gte('week_ending', `${fromYear}-01-01`)
+      .lte('week_ending', `${toYear}-12-31`)
+      .order('week_ending', { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    const batch = (data ?? []) as unknown as WeeklySaleRow[];
+    rows.push(...batch);
+    if (batch.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return rows.filter((r) => {
+    if (!r.week_ending) return false;
+    const ym = Number(r.week_ending.slice(0, 4)) * 100 + Number(r.week_ending.slice(5, 7));
     return ym >= fromYear * 100 + fromMonth && ym <= toYear * 100 + toMonth;
   });
 }

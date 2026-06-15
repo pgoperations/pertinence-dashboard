@@ -8,7 +8,18 @@ import {
 } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { useIdleTimeout } from './useIdleTimeout';
 import type { AuthStatus, Profile } from '../types/auth';
+
+/** Auto sign-out after this much inactivity (data-sensitivity requirement). */
+export const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+
+/**
+ * sessionStorage marker set the moment we sign out for inactivity, so the
+ * sign-in page can explain *why* the user landed back there. Tab-scoped, like
+ * the supabase auth session, and cleared once read.
+ */
+export const IDLE_SIGNOUT_FLAG = 'pg.idleSignout';
 
 type AuthContextValue = {
   status: AuthStatus;
@@ -135,6 +146,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       sub.subscription.unsubscribe();
     };
   }, []);
+
+  // Inactivity guard: only armed while signed in. On expiry, leave a marker for
+  // the sign-in page then sign out — onAuthStateChange flips status to
+  // signed-out and ProtectedRoute redirects to /sign-in.
+  useIdleTimeout({
+    timeoutMs: IDLE_TIMEOUT_MS,
+    enabled: status === 'signed-in',
+    onIdle: () => {
+      try {
+        sessionStorage.setItem(IDLE_SIGNOUT_FLAG, '1');
+      } catch {
+        /* storage unavailable — sign out anyway */
+      }
+      void supabase.auth.signOut();
+    },
+  });
 
   const value = useMemo<AuthContextValue>(
     () => ({

@@ -78,6 +78,11 @@ export default function SalesPage() {
     feesReceived: [],
     totalRevenueInflow: [],
   };
+  const kpiTransactions = data?.kpiTransactions ?? {
+    weeklySales: [],
+    initialReceived: [],
+    furtherReceived: [],
+  };
   const monthly = data?.monthly ?? [];
   const pivot = data?.pivot ?? [];
   const byLocation = data?.byLocation ?? [];
@@ -110,6 +115,7 @@ export default function SalesPage() {
         <KpiStrip
           kpis={kpis}
           breakdowns={kpiBreakdowns}
+          transactions={kpiTransactions}
           sources={sources}
           loading={loading}
         />

@@ -4,11 +4,14 @@ import { StatusChip } from '../StatusChip';
 import { IconChevronDown } from '../icons';
 import { BreakdownList, type BreakdownItem } from './BreakdownList';
 import { DrillPanel } from './DrillPanel';
-import { formatNairaCompact, formatNumber, formatAsOf } from '../../lib/format';
+import { TxnDetailList, type TxnDetailRow } from './TxnDetailList';
+import { formatNaira, formatNairaCompact, formatNumber, formatPersonName, formatAsOf } from '../../lib/format';
 import type {
   KpiBreakdowns,
+  KpiTransactions,
   SalesKpis,
   SalesPanelSources,
+  SalesTxnDetail,
 } from '../../lib/queries/sales';
 
 type TileId = 'total' | 'plots' | 'payable' | 'initial' | 'further';
@@ -23,11 +26,13 @@ type Tile = {
 export function KpiStrip({
   kpis,
   breakdowns,
+  transactions,
   sources,
   loading,
 }: {
   kpis: SalesKpis;
   breakdowns: KpiBreakdowns;
+  transactions: KpiTransactions;
   sources: SalesPanelSources;
   loading: boolean;
 }) {
@@ -69,7 +74,7 @@ export function KpiStrip({
   return (
     <PanelCard
       title="Sales summary"
-      subtitle="Tap a tile for the breakdown that produced it."
+      subtitle="Tap a tile for the breakdown — and the transactions — behind it."
       right={asOf ? <StatusChip tone="slate">As of {formatAsOf(asOf)}</StatusChip> : undefined}
       source="Bank Deposit 2026 LAND (received) • Weekly Sales 2026 (payable + plot count). Fees & charges shown separately on the panel."
     >
@@ -151,6 +156,10 @@ export function KpiStrip({
         <div id="kpi-drill">
           <DrillPanel title={drillTitle(open)}>
             {renderDrill(open, breakdowns)}
+            {(() => {
+              const rows = txnRowsFor(open, transactions);
+              return rows && rows.length > 0 ? <KpiTxnDetails key={open} rows={rows} /> : null;
+            })()}
           </DrillPanel>
         </div>
       )}
@@ -251,6 +260,81 @@ function renderDrill(id: TileId, b: KpiBreakdowns) {
       return <BreakdownList items={items} emptyMessage="No Further / Balance receipts in this range." />;
     }
   }
+}
+
+// Maps a tile's transaction list into display rows. Returns null for tiles that
+// have no per-row source (the hero "Total" tile, whose detail is the by-stage
+// split plus the separately-surfaced fees).
+function txnRowsFor(id: TileId, t: KpiTransactions): TxnDetailRow[] | null {
+  switch (id) {
+    case 'plots':
+      return t.weeklySales.map((x, i) => ({
+        key: `ws-${i}`,
+        date: x.date,
+        title: x.customerName?.trim() || '—',
+        value: `${formatNumber(x.plotCount ?? 0)} ${(x.plotCount ?? 0) === 1 ? 'plot' : 'plots'}`,
+        meta: metaOf(x),
+      }));
+    case 'payable':
+      return t.weeklySales.map((x, i) => ({
+        key: `ws-${i}`,
+        date: x.date,
+        title: x.customerName?.trim() || '—',
+        value: formatNaira(x.amount),
+        meta: metaOf(x),
+      }));
+    case 'initial':
+      return t.initialReceived.map((x, i) => ({
+        key: `in-${i}`,
+        date: x.date,
+        title: x.customerName?.trim() || '—',
+        value: formatNaira(x.amount),
+        meta: metaOf(x),
+      }));
+    case 'further':
+      return t.furtherReceived.map((x, i) => ({
+        key: `fu-${i}`,
+        date: x.date,
+        title: x.customerName?.trim() || '—',
+        value: formatNaira(x.amount),
+        meta: metaOf(x),
+      }));
+    case 'total':
+      return null;
+  }
+}
+
+function metaOf(x: SalesTxnDetail): string[] {
+  return [
+    x.salesPerson ? formatPersonName(x.salesPerson) : '',
+    x.locationName ?? '',
+    x.detail ?? '',
+  ].filter(Boolean);
+}
+
+// Collapsible transaction list under a KPI breakdown. Defaults closed so the
+// drill opens to the summary; one tap reveals the underlying rows for a
+// presentation. Remounted per tile via `key` so the open state resets cleanly.
+function KpiTxnDetails({ rows }: { rows: TxnDetailRow[] }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="mt-3 border-t border-slate-200 pt-3">
+      <button
+        type="button"
+        onClick={() => setExpanded((s) => !s)}
+        aria-expanded={expanded}
+        className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:text-accent-hover focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-1 rounded cursor-pointer"
+      >
+        <IconChevronDown
+          className={['h-3.5 w-3.5 transition-transform', expanded ? 'rotate-180' : ''].join(' ')}
+        />
+        {expanded
+          ? 'Hide transactions'
+          : `Show ${rows.length} transaction${rows.length === 1 ? '' : 's'}`}
+      </button>
+      {expanded && <TxnDetailList rows={rows} />}
+    </div>
+  );
 }
 
 function freshest(s: SalesPanelSources): string | null {

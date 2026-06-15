@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
+import { useAuth, IDLE_SIGNOUT_FLAG } from '../hooks/useAuth';
 import { IconEye, IconEyeOff, IconCheck } from '../components/icons';
 
 type LocationState = { from?: string; resetSuccess?: boolean } | null;
@@ -17,6 +17,19 @@ export default function SignInPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [resetSent, setResetSent] = useState(false);
+  // Read-and-clear the inactivity marker once on mount so the banner shows only
+  // for the sign-out that triggered it, not on every later visit to this page.
+  const [idleSignedOut] = useState(() => {
+    try {
+      if (sessionStorage.getItem(IDLE_SIGNOUT_FLAG) === '1') {
+        sessionStorage.removeItem(IDLE_SIGNOUT_FLAG);
+        return true;
+      }
+    } catch {
+      /* storage unavailable */
+    }
+    return false;
+  });
 
   if (status === 'signed-in') {
     const from = (location.state as LocationState)?.from ?? '/';
@@ -70,6 +83,19 @@ export default function SignInPage() {
             {mode === 'sign-in' ? 'Sign in to continue.' : 'Reset your password.'}
           </p>
         </div>
+
+        {idleSignedOut && mode === 'sign-in' && (
+          <div
+            role="status"
+            className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+          >
+            <svg className="mt-0.5 h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v5l3 2" />
+            </svg>
+            <span>You were signed out after 15 minutes of inactivity. Please sign in again.</span>
+          </div>
+        )}
 
         {justReset && mode === 'sign-in' && (
           <div
