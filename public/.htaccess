@@ -1,0 +1,28 @@
+# Pertinence Dashboard — SPA client-side routing fallback for the /pg-dashboard/ folder.
+#
+# Why this file is needed: the dashboard is a single-page app. Real files
+# (index.html, assets/*, logo.png) are served directly, but client-side routes
+# like /pg-dashboard/sales or /pg-dashboard/reset-password are NOT real files.
+# Without this rule, Apache (and WordPress's root rewrite) would 404 them. This
+# rewrites any non-file request under /pg-dashboard/ back to the app's
+# index.html so the router can take over.
+#
+# This .htaccess is bundled into the build output and lives INSIDE the
+# /pg-dashboard/ folder; it only affects that path. It does not touch the
+# WordPress site at the web root. (Harmless on the Vercel root deploy — Vercel
+# is not Apache and ignores .htaccess.)
+
+Options -MultiViews
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /pg-dashboard/
+
+  # Serve existing files and directories as-is (assets, logo, index.html).
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Everything else → the SPA entry point.
+  RewriteRule ^ index.html [L]
+</IfModule>

@@ -35,3 +35,7 @@ supabase/.temp
 
 # Internal company reports / source PDFs — never commit
 *.pdf
+
+# Handoff build artifacts (regenerate with the command in DEPLOYMENT_HANDOFF.md)
+*.zip
+_handoff_stage/
