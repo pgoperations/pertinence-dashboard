@@ -50,11 +50,15 @@ const YEARS_TO_INGEST: number[] = (() => {
 
 // 2026 section begins at sheet row 129 with the year-marker cell. We read from
 // row 100 down to give the year-marker scanner a comfortable window. The window
-// extends to row 1500 so a 2027 section added BELOW the 2026 block is still in
-// range (carryover fix 2026-06-04). The tab is 106 cols wide (col DB is index
-// 105); read all of them so future supervisor additions to the right also flow
-// through.
-const READ_RANGE = `${SOURCE_TAB}!A100:DB1500`;
+// extends well past the current data so future year-sections stacked BELOW the
+// 2026 block stay in range (carryover fix 2026-06-04). Ceiling raised 1500 → 5000
+// (2026-06-18) as headroom — this is a section-anchored, single-tab ingest, so
+// unlike the others it CANNOT auto-discover beyond the read window; rows past
+// the ceiling are silently skipped. Revisit if DM ever splits into per-year tabs
+// (then it could use discoverYearTabs like the rest). The tab is 106 cols wide
+// (col DB is index 105); read all of them so future additions to the right flow
+// through too.
+const READ_RANGE = `${SOURCE_TAB}!A100:DB5000`;
 
 Deno.serve(async (req) => {
   const preflight = handlePreflight(req);

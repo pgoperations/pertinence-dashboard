@@ -1,28 +1,26 @@
 // Parse the "Media Team Reporting" tab on the Marketing Team Reporting
 // Template spreadsheet into long-form weekly fact rows.
 //
-// 2026 section layout (start anchored on a configured row — supervisor adds
-// 2027 by inserting rows above without breaking 2026, but adding a 2027
-// SECTION requires bumping INGEST_2026_START_ROW or adding a 2027 entry):
+// Tab layout (each year now lives in its OWN tab — "2026 Media Team Reporting",
+// "2027 …", discovered by ingest-media-weekly via discoverYearTabs — so the
+// parser is handed the whole tab [startRow 0 .. rows.length] and finds the month
+// blocks itself; there are NO hardcoded year start-rows or row offsets anymore.
+// (Historic note: the old single combined tab stacked 2025 then 2026 by fixed
+// row offsets — that scheme is gone.)
 //
-//   row 676: month header row — "JANUARY" + "WEEK 1" / "WEEK 2" / "WEEK 3" /
-//            "WEEK 4" at staggered cols (B / M / W / AG for Jan).
-//   row 677: platform-A header — "Facebook" label + 8 brand cols (PG /
-//            REALVEST / PPL / HOMEWORTH / PETTY SAVE / GENIUS / SETTLE QUICK /
-//            FARMWEY AFRICA), repeated per week block.
-//   rows 678–683: Facebook metric rows (Number of Interactions, Average Reach,
-//            Number of Page Visits, Number of New Followers, Total Number of
-//            Followers, No of Views, Number of Posts Delivered) × 8 brand cols
-//            per week.
+//   month header row: e.g. "JANUARY" + "WEEK 1".."WEEK 5" at staggered cols.
+//   platform-A header: "Facebook" label + 8 brand cols (PG / REALVEST / PPL /
+//            HOMEWORTH / PETTY SAVE / GENIUS / SETTLE QUICK / FARMWEY AFRICA),
+//            repeated per week block.
+//   Facebook metric rows (Number of Interactions, Average Reach, Number of Page
+//            Visits, Number of New Followers, Total Number of Followers, No of
+//            Views, Number of Posts Delivered) × 8 brand cols per week.
 //   then a blank row, then Instagram platform header + metric rows, then
 //   YouTube Channel platform header + metric rows.
-//   block height ~30 rows / month.
-//
-// Each subsequent month sits ~56 rows below (Feb starts row 732 = 676 + 56).
 //
 // Anchor algorithm:
-//   1. Scan from INGEST_2026_START_ROW for rows containing a MONTH name.
-//      The row also contains WEEK 1..4 cells; we read both in the same pass.
+//   1. Scan the tab for rows containing a MONTH name.
+//      The row also contains WEEK 1..5 cells; we read both in the same pass.
 //   2. For each week-header cell in that row, walk DOWN, alternating between
 //      platform-header rows (which redefine the brand-col mapping for that
 //      platform within that week) and metric rows (values in brand cols).

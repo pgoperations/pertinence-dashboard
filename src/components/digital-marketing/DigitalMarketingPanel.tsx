@@ -95,7 +95,7 @@ function DigitalMarketingKpiCard({
           <StatusChip tone="slate">As of {formatAsOf(sourceUpdatedAt)}</StatusChip>
         ) : undefined
       }
-      source="Source: Marketing Team Reporting Template → Digital Marketing tab. One row per (year, month, campaign, metric) anchored on the 2026 year marker (sheet row 129)."
+      source="Source: Marketing Team Reporting Template → Digital Marketing tab. One row per (year, month, campaign, metric), anchored on each year's in-sheet year marker."
     >
       {error && (
         <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">

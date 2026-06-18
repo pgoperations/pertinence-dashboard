@@ -70,8 +70,8 @@ export function MoMChart({
       }
       source={
         isTotalView
-          ? 'Bank Deposit 2026 LAND — every naira received in the period, including fees & charges.'
-          : 'Bank Deposit 2026 LAND (received side) • Weekly Sales 2026 (payable side). Surfaced together, never reconciled.'
+          ? 'Bank Deposit, LAND tab — every naira received in the period, including fees & charges.'
+          : 'Bank Deposit, LAND tab (received side) • Weekly Sales tab (payable side). Surfaced together, never reconciled.'
       }
     >
       {empty ? (

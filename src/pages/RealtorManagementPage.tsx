@@ -70,7 +70,7 @@ export default function RealtorManagementPage() {
 
         {!loading && !error && data && data.monthsObserved === 0 && (
           <StatusBanner tone="pending" title="No data in this range">
-            Try widening the date range — the 2026 source tab currently has Jan–Apr
+            Try widening the date range — the source tab may only have a few months
             populated. Per-manager performance (Mrs Kemi / Richard Makava / Debbie)
             remains v1-out-of-scope per DESIGN_DECISIONS.
           </StatusBanner>

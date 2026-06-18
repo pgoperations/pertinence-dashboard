@@ -76,7 +76,7 @@ export function KpiStrip({
       title="Sales summary"
       subtitle="Tap a tile for the breakdown — and the transactions — behind it."
       right={asOf ? <StatusChip tone="slate">As of {formatAsOf(asOf)}</StatusChip> : undefined}
-      source="Bank Deposit 2026 LAND (received) • Weekly Sales 2026 (payable + plot count). Fees & charges shown separately on the panel."
+      source="Bank Deposit, LAND tab (received) • Weekly Sales tab (payable + plot count). Fees & charges shown separately on the panel."
     >
       <button
         type="button"
@@ -108,7 +108,7 @@ export function KpiStrip({
           {loading ? '—' : formatNairaCompact(kpis.totalRevenueInflow)}
         </div>
         <div className="mt-1 text-[11px] text-slate-500">
-          Initial + Further + Fees received (Bank Deposit 2026 LAND)
+          Initial + Further + Fees received (Bank Deposit, LAND tab)
         </div>
       </button>
 

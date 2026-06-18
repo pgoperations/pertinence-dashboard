@@ -340,14 +340,40 @@ are struck through below for the record; the rest remain open as of 2026-06-18:
    switched (2026-06-05) from fixed row offsets to per-year **tab discovery**
    (`discoverYearTabs`, regex `^(\d{4}) Media Team Reporting$`), so it auto-discovers
    `2027 Media Team Reporting` like the other ingests — no hand-edit needed.
-4. **Re-deploy the last `yearTabs` edit.** The 2027 tab-discovery edits (2026-06-05) shipped for most
-   ingests when they were redeployed on 2026-06-11 with the stale-row sweep — **only
-   `ingest-digital-marketing` is still not redeployed** with its carryover edit. Redeploy it before
+4. **Re-deploy `ingest-digital-marketing`.** The 2027 tab-discovery edits (2026-06-05) shipped for
+   most ingests when they were redeployed on 2026-06-11 with the stale-row sweep — **only
+   `ingest-digital-marketing` is still not redeployed** with its carryover edit, and on 2026-06-18 its
+   read-range ceiling was raised (1500 → 5000 rows) so future year-sections aren't truncated. Both
+   land on the next `supabase functions deploy ingest-digital-marketing --no-verify-jwt`. Do it before
    year-end.
 5. **Fill in the credentials template (§B11)** and store it in the company password manager.
 6. **Secure the Supabase login (§B2.1).** It is GitHub-only and *cannot* take its own password —
    instead enable GitHub 2FA (save the recovery codes) and invite a 2nd Supabase org owner so the
    database root isn't a single GitHub account.
+
+### B9.1 Known hardcoded assumptions (audited 2026-06-18)
+
+A sweep for values that could rot as time/data move. The dangerous ones (the Digital Marketing row
+ceiling; the Q1-vs-Q2 chart) were fixed on 2026-06-18. These remain — none is broken today, but know
+where they are:
+
+- **Fixed read-range row caps on two ingests.** `ingest-marketing-expense` reads `A1:Q200` (200 rows
+  per monthly tab) and `ingest-realtor-managers-weekly` reads `A1:Z300`. A month/section that exceeds
+  the cap, or columns added past `Q`/`Z`, would be **silently truncated**. Both have headroom now;
+  widen the range constant if a sheet outgrows it. (Bank-deposit / weekly-sales / customer-file use
+  open-ended `A2:M`-style ranges and are unaffected.)
+- **Default landing view is "H1 of the current year"** (`DEFAULT_PRESET = 'h1'` in
+  [`src/lib/dateRange.ts`](../../src/lib/dateRange.ts)). It adapts to the year automatically, but for
+  a live (no longer half-year) dashboard, opening to Jan–Jun looks stale in H2. Consider switching the
+  default to `ytd` or `this-quarter`. (The literal `2026-01-01/06-30` fallback beside it is a dead
+  defensive path — the preset resolves first.)
+- **`NON_REP_TABS` exclusion list is hardcoded** in
+  [`_shared/parseCustomerSupport.ts`](../../supabase/functions/_shared/parseCustomerSupport.ts) —
+  `Staff_Reference`, `ABIDEMI`, `VICTORIA`, etc. Customer-support **rep** tabs are auto-discovered, so
+  a *new non-rep* tab would be mistaken for a rep (and a rep auto-created); and if `ABIDEMI` /
+  `VICTORIA` ever return as active reps, they stay excluded until this list is edited.
+- **`EARLIEST_DATA_YEAR = 2024`** (dateRange.ts) is only a fallback — the real earliest date comes
+  from the `get_earliest_data_date()` RPC. Harmless unless that RPC ever fails.
 
 ## B10. Local development quickstart (next developer)
 

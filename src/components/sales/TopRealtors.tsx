@@ -19,7 +19,7 @@ export function TopRealtors({
   return (
     <PanelCard
       title="Top realtors"
-      subtitle="By revenue (Bank Deposit 2026 LAND, SALES PERSON column)."
+      subtitle="By revenue (Bank Deposit, LAND tab, SALES PERSON column)."
       source="Aggregated from the SALES PERSON cell on each deposit row. Unattributed deposits (~56% of rows per project brief) bucket into a single 'Unattributed' row when in the top set."
     >
       {!loading && realtors.length === 0 ? (

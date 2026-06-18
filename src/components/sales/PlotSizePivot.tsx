@@ -22,7 +22,7 @@ export function PlotSizePivot({
       title="Plots sold by location × size"
       subtitle="Tap a location row for its monthly breakdown."
       right={<StatusChip tone="sky">Weekly Sales</StatusChip>}
-      source="Source: Weekly Sales 2026. Special bucket covers QUARTER / ACRE / HECTARE / sub-300 SQM per the plot-type spec."
+      source="Source: Weekly Sales tab. Special bucket covers QUARTER / ACRE / HECTARE / sub-300 SQM per the plot-type spec."
     >
       {empty ? (
         <div className="grid h-32 place-items-center rounded-lg bg-slate-50 text-sm text-slate-500">
