@@ -340,12 +340,10 @@ are struck through below for the record; the rest remain open as of 2026-06-18:
    switched (2026-06-05) from fixed row offsets to per-year **tab discovery**
    (`discoverYearTabs`, regex `^(\d{4}) Media Team Reporting$`), so it auto-discovers
    `2027 Media Team Reporting` like the other ingests — no hand-edit needed.
-4. **Re-deploy `ingest-digital-marketing`.** The 2027 tab-discovery edits (2026-06-05) shipped for
-   most ingests when they were redeployed on 2026-06-11 with the stale-row sweep — **only
-   `ingest-digital-marketing` is still not redeployed** with its carryover edit, and on 2026-06-18 its
-   read-range ceiling was raised (1500 → 5000 rows) so future year-sections aren't truncated. Both
-   land on the next `supabase functions deploy ingest-digital-marketing --no-verify-jwt`. Do it before
-   year-end.
+4. ~~**Re-deploy `ingest-digital-marketing`.**~~ **Done (2026-06-18).** It was the last ingest not
+   redeployed with the 2026-06-05 tab-discovery/carryover edit; redeployed via
+   `supabase functions deploy ingest-digital-marketing --no-verify-jwt`, which also shipped the
+   read-range ceiling raise (1500 → 5000 rows). All 8 ingest functions are now current on live.
 5. **Fill in the credentials template (§B11)** and store it in the company password manager.
 6. **Secure the Supabase login (§B2.1).** It is GitHub-only and *cannot* take its own password —
    instead enable GitHub 2FA (save the recovery codes) and invite a 2nd Supabase org owner so the
