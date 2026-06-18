@@ -21,10 +21,12 @@ This guide has two halves:
 > - [`docs/data-entry/`](README.md) — rules for staff *entering* data into the
 >   source Google Sheets. Hand these to the teams that own each sheet.
 > - [`CLAUDE.md`](../../CLAUDE.md) — the engineering working-notes (deep detail, written for the AI coding assistant).
+> - [`DEPLOYMENT_HANDOFF.md`](../../DEPLOYMENT_HANDOFF.md) — how the live site is hosted at
+>   `pertinencegroup.com/pg-dashboard/` and how to rebuild + republish it (Part 3).
 > - [`PROJECT_BRIEF.md`](../../PROJECT_BRIEF.md), [`DESIGN_DECISIONS.md`](../../DESIGN_DECISIONS.md),
 >   [`PROGRESS.md`](../../PROGRESS.md) — *why* things are built the way they are.
 
-*Last updated: 2026-06-11.*
+*Last updated: 2026-06-18 — the dashboard is **live** at `https://pertinencegroup.com/pg-dashboard/`.*
 
 ---
 
@@ -44,7 +46,7 @@ a bug. **Do not edit a sheet just to make the dashboard look tidy** — that hid
 
 ## A2. How to sign in
 
-1. Open the dashboard URL (see the **Accounts register**, §B2 — fill in the live Netlify URL once deployed).
+1. Open the dashboard at **`https://pertinencegroup.com/pg-dashboard/`**.
 2. Enter your email and password.
 3. **Accounts are created by an administrator only** — there is no public "Sign up". If a new
    staff member needs access, an admin adds them (see §A6).
@@ -85,7 +87,7 @@ If a sync shows an error in the pop-up, see Troubleshooting (§A5).
 | New sheet edit isn't showing | Auto-sync hasn't ticked yet (≤15 min), or the sheet tab was renamed | Press **Sync Sheets**. If still missing, a header/tab name may have changed — see §B7. |
 | "Sync" shows an error for one source | The source sheet's structure changed, or it was un-shared from the service account | See §B5 (re-share) and §B7 (structure change). This is a developer task. |
 | Can't sign in / no reset email | Account doesn't exist, or the email is mistyped | An admin must create or confirm the account (§A6). Reset emails are only sent to real accounts. |
-| Whole dashboard won't load | Hosting (Netlify) or database (Supabase) outage, or billing lapsed | Check the Netlify and Supabase dashboards (§B2). Confirm the accounts are paid/active. |
+| Whole dashboard won't load | The `pertinencegroup.com` website is down, or the database (Supabase) is in outage / billing lapsed | First check `pertinencegroup.com` itself loads (the dashboard files live on that same server — see §B2). Then check the Supabase project is active/paid. |
 
 ## A6. Adding or removing a dashboard user (admin task)
 
@@ -107,12 +109,15 @@ The dashboard depends on a handful of online accounts. The full register with lo
 - **Google account (Pertinence Group)** — owns the source Google Sheets *and* the Google Cloud
   project that lets the dashboard read them. Losing this account breaks data ingest. Keep it safe.
 - **Supabase** — the database, logins, and the scheduled sync jobs.
-- **Netlify** — hosts the website.
 - **GitHub** — stores the source code.
+- **The `pertinencegroup.com` web server (WordPress/AWS)** — *hosts* the dashboard's static files
+  under `/pg-dashboard/`. There is **no separate hosting account** (no Netlify/Vercel) — the website
+  admin who manages `pertinencegroup.com` controls this. See [`DEPLOYMENT_HANDOFF.md`](../../DEPLOYMENT_HANDOFF.md).
 
-**Keep all four accounts' billing active and their passwords in the company password manager.** The
-whole system is designed so that *no individual person* is a single point of failure — but only if
-these account credentials are stored centrally, not in someone's head.
+**Keep all three online accounts' (Google, Supabase, GitHub) billing active and their passwords in
+the company password manager.** The whole system is designed so that *no individual person* is a
+single point of failure — but only if these account credentials are stored centrally, not in
+someone's head.
 
 ---
 
@@ -126,14 +131,17 @@ these account credentials are stored centrally, not in someone's head.
   Bank Deposit Mirror ─────┐
   Marketing Fund Expense ──┤   read via    8 ingest Edge Functions (Deno)                     React app
   MASTER - Customer Support├──────────────▶ pull → parse → upsert into fact tables ──┐        (Vite build)
-  Marketing Team Reporting ┘  service-acct  then RPC-refresh aggregate tables          │  read   on Netlify
+  Marketing Team Reporting ┘  service-acct  then RPC-refresh aggregate tables          │ read  static files
                                             ▲                                          ▼  (anon
                               pg_cron fires every 15 min ──┘            Postgres tables (RLS-gated)  key)
                                             ▲                                          ▲
                               "Sync Sheets" button (manual) ───────────────────────────┘
 ```
 
-- **Frontend:** React 18 + Vite + TypeScript + Tailwind v3 + Recharts. Built to static files, hosted on Netlify, auto-deployed from GitHub `main`.
+- **Frontend:** React 18 + Vite + TypeScript + Tailwind v3 + Recharts. Built to static files and
+  **published under `/pg-dashboard/` on the existing `pertinencegroup.com` (WordPress/AWS) server** —
+  no Netlify/Vercel, and **not** auto-deployed from GitHub. A frontend change is a manual rebuild +
+  republish (§B8 and [`DEPLOYMENT_HANDOFF.md`](../../DEPLOYMENT_HANDOFF.md)).
 - **Backend:** Supabase — Postgres 17 (data + Row-Level Security), Auth (email/password), Edge
   Functions (Deno 2) for the ingests.
 - **Data pipeline:** 8 ingest functions read Google Sheets via a **service account** (Sheets API v4,
@@ -154,8 +162,8 @@ these account credentials are stored centrally, not in someone's head.
 | 2 | **Google Cloud project** `pertinence-dashboard` | Hosts the Sheets API + the service account. | console.cloud.google.com (under account #1) | Managed inside account #1. |
 | 3 | **Service account** `dashboard-sheets-reader@pertinence-dashboard.iam.gserviceaccount.com` | The "robot" identity the dashboard uses to *read* the sheets. Has no project IAM role — access is granted by sharing each sheet with this email as Viewer. | n/a (a key file, not a login) | JSON key file, stored **outside the repo**. Its two fields are loaded into Supabase secrets as `SHEETS_SERVICE_ACCOUNT_EMAIL` + `SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY` (see §B4). |
 | 4 | **Supabase project** `hrmrqpkcvyjwxrehrgvq` | Database, Auth, Edge Functions, cron. | supabase.com — **only via "Login with GitHub"** (account #5); a native password is **not possible** (see §B2.1) | Access = GitHub (#5). Secure GitHub + add a 2nd org owner (§B2.1). API keys in Project Settings → API; service-role key is **secret** (full DB access). |
-| 5 | **GitHub** `pgoperations/pertinence-dashboard` (org `pgoperations`) | Source code; pushing to `main` auto-deploys. **Also the login for Supabase (#4).** | github.com — `pgoperations@pertinencegroup.com` | Password held by the **Assistant General Manager**; put it in the company password manager + enable 2FA. |
-| 6 | **Netlify** | Hosts the website; builds from GitHub on every push to `main`. | netlify.com | Password manager. Connected to the GitHub repo. |
+| 5 | **GitHub** `pgoperations/pertinence-dashboard` (org `pgoperations`) | Source code. **No auto-deploy** — the live site is published manually (§B8). **Also the login for Supabase (#4).** | github.com — `pgoperations@pertinencegroup.com` | Password held by the **Assistant General Manager**; put it in the company password manager + enable 2FA. |
+| 6 | **`pertinencegroup.com` web server (WordPress / AWS)** | *Hosts* the dashboard's static files under the `/pg-dashboard/` path. There is **no separate hosting account** (no Netlify/Vercel). | Managed by whoever administers the `pertinencegroup.com` website. | n/a — controlled via the website admin. To update the site, hand them a rebuilt zip ([`DEPLOYMENT_HANDOFF.md`](../../DEPLOYMENT_HANDOFF.md)). |
 | 7 | **Dashboard admin user** `pgoperations@pertinencegroup.com` | The first admin login *inside* the app (Supabase Auth user with `role = admin`). | the dashboard URL itself | Password manager. Manage other users from here (§A6). |
 
 **The 4 source Google Sheets** (all owned by account #1, all shared with service account #3 as Viewer):
@@ -231,9 +239,10 @@ the next sync; see §B12), plus per-source parsers.
 **Supabase Vault secrets** (for the cron jobs — set once via SQL, see migration 019 header):
 `supabase_functions_base_url`, `supabase_anon_key`.
 
-**Frontend env** (in `.env.local` for local dev, *and* in Netlify → Site settings → Environment
-variables for production): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`. These are public by design
-(the anon key ships in the browser bundle; RLS protects the data).
+**Frontend env** (`.env.local`): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`. Vite **bakes these
+into the static bundle at build time** on the developer's machine, so the production deploy needs no
+hosting-provider env panel — whatever is in `.env.local` when you run the build is what ships. They
+are public by design (the anon key rides in the browser bundle; RLS protects the data).
 
 Template: [`.env.local.example`](../../.env.local.example).
 
@@ -295,8 +304,18 @@ Don't "correct" it; the code matches it exactly.
 
 ## B8. Deploying
 
-**Frontend (automatic):** push to GitHub `main` → Netlify builds (`pnpm build`) and publishes. To
-deploy, just commit and push.
+**Frontend (manual — there is no auto-deploy).** The live site is a folder of static files served at
+`pertinencegroup.com/pg-dashboard/`; it does **not** rebuild from GitHub. To ship a frontend change:
+
+1. Rebuild for the deploy path: `pnpm exec tsc -b` then `pnpm exec vite build --base=/pg-dashboard/`.
+2. Stage `dist/` into a `pg-dashboard/` folder + the README, and zip it (the exact PowerShell is
+   **Part 3 of [`DEPLOYMENT_HANDOFF.md`](../../DEPLOYMENT_HANDOFF.md)**).
+3. Hand the zip to the `pertinencegroup.com` website admin to republish.
+
+The URL path is compiled into the build (asset links + router `basename` + reset redirect), so these
+files must be served at exactly `/pg-dashboard/` — a different path needs a rebuild with a matching
+`--base`, not a folder rename. **Data and backend changes need no republish** — the browser reads
+Supabase live, and Edge Functions/migrations deploy straight to Supabase (below).
 
 **Edge Functions (manual):** `supabase functions deploy <name> --no-verify-jwt`. After deploying a
 *new* function, also `supabase secrets set` its Sheet ID and add it to the cron schedule (migrations
@@ -307,18 +326,20 @@ deploy, just commit and push.
 
 ## B9. ⚠️ Known gaps / finish before final handover
 
-The project is at **step 10 of 10 (polish + deploy)**. These are open as of 2026-06-11 — close them
-so the next person doesn't trip:
+The project is **live (deployed 2026-06-18 at `pertinencegroup.com/pg-dashboard/`)**. Resolved items
+are struck through below for the record; the rest remain open as of 2026-06-18:
 
-1. **Netlify SPA redirect is not in the repo.** There is no `netlify.toml` / `public/_redirects`.
-   React Router needs a catch-all redirect or refreshing on a deep link (e.g. `/sales`) will 404 on
-   Netlify. **Add `public/_redirects` containing `/*  /index.html  200` before going live.**
-2. **Reset-password redirect URLs.** In Supabase → Auth → URL Configuration, add the **production
-   Netlify URL** + `/reset-password` to the allow-list, and set Site URL to the prod URL — otherwise
-   password-reset links fall back to localhost.
-3. **`ingest-media-weekly` 2027 carryover is a hand-edit.** Unlike the other ingests (which
-   auto-discover `2027 …` tabs), media-weekly uses fixed row offsets — its 2027 start row must be
-   added manually when 2027 data begins. See the `CARRYOVER NOTE` in its code.
+1. ~~**SPA deep-link redirect missing.**~~ **Done.** The static deploy ships
+   [`public/.htaccess`](../../public/.htaccess) (`RewriteBase /pg-dashboard/`) which falls any
+   non-file `/pg-dashboard/*` request back to `index.html`, so deep-link refreshes don't 404 on the
+   Apache/WordPress server. (The old Netlify `_redirects` idea is moot — there is no Netlify.)
+2. ~~**Reset-password redirect URLs.**~~ **Done.** Supabase → Auth → URL Configuration now has Site
+   URL `https://pertinencegroup.com/pg-dashboard` and `…/pg-dashboard/reset-password` in the
+   allow-list. (This affects only the forgot-password email link, not sign-in.)
+3. ~~**`ingest-media-weekly` 2027 carryover hand-edit.**~~ **No longer applies.** media-weekly was
+   switched (2026-06-05) from fixed row offsets to per-year **tab discovery**
+   (`discoverYearTabs`, regex `^(\d{4}) Media Team Reporting$`), so it auto-discovers
+   `2027 Media Team Reporting` like the other ingests — no hand-edit needed.
 4. **Re-deploy the last `yearTabs` edit.** The 2027 tab-discovery edits (2026-06-05) shipped for most
    ingests when they were redeployed on 2026-06-11 with the stale-row sweep — **only
    `ingest-digital-marketing` is still not redeployed** with its carryover edit. Redeploy it before
@@ -358,7 +379,8 @@ SUPABASE (#4)  project ref: hrmrqpkcvyjwxrehrgvq
   service-role key:   [Project Settings → API — SECRET]
 GITHUB (#5)   org/repo: pgoperations/pertinence-dashboard
   login: pgoperations@pertinencegroup.com   password: [held by Assistant General Manager]
-NETLIFY (#6)  login: ____________________   site URL: ____________________
+WEB SERVER (#6)  pertinencegroup.com (WordPress/AWS) — hosts the static files at /pg-dashboard/
+  no separate hosting account; website admin contact: ____________________
 DASHBOARD ADMIN (#7)  email: pgoperations@pertinencegroup.com   password: ____________________
 ```
 

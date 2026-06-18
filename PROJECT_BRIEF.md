@@ -11,7 +11,7 @@ The output structure mirrors the existing H1 2025 PDF report (which I've reviewe
 
 ## Tech stack (locked)
 
-- Frontend: React + Vite + Tailwind + Recharts on Netlify (GitHub auto-deploy)
+- Frontend: React + Vite + Tailwind + Recharts. Deployed (2026-06-18) as a path-based static publish at `pertinencegroup.com/pg-dashboard/` on the existing WordPress/AWS site — no DNS access for a subdomain, so NOT Netlify/Vercel and not auto-deployed from GitHub (see DEPLOYMENT_HANDOFF.md)
 - Backend: Supabase (Postgres + Auth + Edge Functions)
 - Auth: Email/password
 - Google Sheets ingestion: Service account + Google Sheets API (NOT Apps Script — burned hard on that in the prior dashboard)
@@ -76,7 +76,7 @@ Each row carries `source_row_id` for traceback and `quality_flags` jsonb for ing
 ## Five dashboard sections (mirror the H1 PDF structure)
 
 1. **Marketing** — budget summary, distribution by activity (table + donut), monthly cost (table + line), activities table, narrative
-2. **Sales (Land)** — plots by location × size, sales by location (payable vs received), month-on-month, Q1 vs Q2, realtor sale tier breakdowns, top-selling locations, narrative. OneApp panel greyed out.
+2. **Sales (Land)** — plots by location × size, sales by location (payable vs received), month-on-month, quarter-by-quarter (Q1–Q4, adaptive), realtor sale tier breakdowns, top-selling locations, narrative. OneApp panel greyed out.
 3. **Realtor Management** — recruitment metrics, attendance, per-manager performance with configurable roster, newly onboarded realtors
 4. **Media & Content** — per-brand × per-platform metrics from manual entry, narrative
 5. **Customer Support** — enquiries by channel, complaints by category, resolution rates, narrative. Brand filter (PPL / RealVest / all), defaults to PPL.
@@ -103,7 +103,7 @@ Plus global date-range selector driving all sections.
 7. Media & Content with manual entry forms for the 4 brands
 8. Rule-based narrative engine, per-section, cached per period
 9. **Automated ingest scheduling + admin "Re-pull from Sheets" button** — pg_cron / Supabase Scheduled Functions for all six ingest Edge Functions on a 15-min cadence, plus an admin-only button in the shell that re-invokes the full ingest pipeline on demand. HARD requirement for launch: without this, the dashboard never reflects new Sheet edits. The existing header refresh button only re-queries Supabase tables — it does NOT re-pull from Sheets, and ingests currently only run when manually invoked.
-10. Polish, Netlify deploy
+10. Polish + deploy ✓ (live 2026-06-18 — path-based static publish at `pertinencegroup.com/pg-dashboard/`)
 
 ## Open items still needing supervisor confirmation (raise but don't block on)
 

@@ -71,24 +71,26 @@ password-reset / email links point at the new path:
 
 1. **Site URL** → `https://pertinencegroup.com/pg-dashboard`
 2. **Redirect URLs** → add `https://pertinencegroup.com/pg-dashboard/reset-password`
-   (keep the existing localhost + `*.vercel.app` entries).
+   (keep the localhost dev entries; the old `*.vercel.app` entries can be removed — that
+   deployment was retired, see below).
 
 The app already builds the correct `/pg-dashboard/reset-password` redirect target into the
 recovery email (the code reads its base path from the build), so once the URL above is
 allow-listed, the forgot-password flow works on the new path.
 
-### The existing Vercel deployment is unaffected
+### This is the only deployment now
 
-This static copy is independent. The Vercel `*.vercel.app` deployment keeps working and
-auto-deploying from GitHub exactly as before — it serves at the root (`/`) while this
-copy serves at `/pg-dashboard/`. Both use the same Supabase backend. The Vercel URL is a
-useful fallback/admin entry point.
+The dashboard previously also ran on a Vercel `*.vercel.app` URL that auto-deployed from
+GitHub. That was **retired on 2026-06-18**, so `/pg-dashboard/` is the sole live copy.
+Consequence: pushing to GitHub no longer publishes anything — shipping a frontend change
+is the manual rebuild-and-republish in Part 3. (Data and backend changes still flow
+automatically through the shared Supabase backend and need no republish.)
 
 ---
 
 ## Part 3 — How to regenerate the build (for the next dev / future updates)
 
-Because this is a static copy (not proxied to Vercel), shipping a change means rebuilding
+Because this is a standalone static copy, shipping a change means rebuilding
 and re-sending the zip — the `/pg-dashboard/` copy does **not** auto-update from GitHub.
 
 From the project root:
@@ -118,11 +120,12 @@ Notes for whoever rebuilds:
   so these files MUST be served at exactly `/pg-dashboard/`. A different path needs a
   rebuild with the matching `--base`.
 - `vite.config.ts` is intentionally left at the default `base: '/'` so a normal
-  `pnpm build` (what Vercel runs) still serves correctly at the root. The `/pg-dashboard/`
-  base is supplied only on the command line for this packaged build.
+  `pnpm build` still serves correctly at the root (handy if the app is ever moved to a
+  root-served host). The `/pg-dashboard/` base is supplied only on the command line for
+  this packaged build.
 - The app is base-path-aware: the router `basename`, the logo `<img>` paths, and the
   password-reset redirect all read `import.meta.env.BASE_URL`, so the same source serves
-  both `/` (Vercel) and `/pg-dashboard/` (this zip) with no code change.
+  both `/` (root) and `/pg-dashboard/` (this zip) with no code change.
 
 ---
 

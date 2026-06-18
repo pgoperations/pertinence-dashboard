@@ -9,8 +9,7 @@
 #
 # This .htaccess is bundled into the build output and lives INSIDE the
 # /pg-dashboard/ folder; it only affects that path. It does not touch the
-# WordPress site at the web root. (Harmless on the Vercel root deploy — Vercel
-# is not Apache and ignores .htaccess.)
+# WordPress site at the web root.
 
 Options -MultiViews
 

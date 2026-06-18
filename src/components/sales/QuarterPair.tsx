@@ -4,18 +4,22 @@ import { StatusChip } from '../StatusChip';
 import { formatNairaCompact } from '../../lib/format';
 import type { RevenueByLocationRow } from '../../lib/queries/sales';
 
-// Per design-lock 2026-05-18: paired horizontal bars per location, Q1 vs Q2,
-// using Received (Bank Deposit = financial source of truth per supervisor #1).
-// Q2 chip flips amber while the quarter is still open (today <= year-06-30).
+// Per design-lock 2026-05-18 this was a Q1-vs-Q2 pair (the report started as a
+// half-year deck). Generalised 2026-06-18 to ALL FOUR quarters: it shows every
+// quarter of the selected year that has activity, plus the current quarter once
+// it begins, so it grows from Q1 → Q1–Q4 as the year fills in and needs no edit
+// for future years. Uses Received (Bank Deposit = financial source of truth per
+// supervisor #1). The current (open) quarter is flagged "in progress".
 
 const TOP_N = 8;
-const COLOR_Q1 = '#94A3B8'; // slate-400
-const COLOR_Q2 = '#56B845'; // brand green (Pertinence) — accent
+// Light → dark green ramp: earlier quarters lighter, the latest darker (brand
+// green at Q3, emphasis at Q4) so the year visibly "deepens" left-to-right.
+const QUARTER_COLORS = ['#A7D9A0', '#7BC56F', '#56B845', '#2F6E25'];
 
 type QuarterRow = {
   locationName: string;
-  q1: number;
-  q2: number;
+  /** Received per quarter, index 0..3 = Q1..Q4. */
+  quarters: number[];
 };
 
 export function QuarterPair({
@@ -31,48 +35,65 @@ export function QuarterPair({
 }) {
   const [showAll, setShowAll] = useState(false);
 
-  const quarters = useMemo(() => computeQuarters(rows, year), [rows, year]);
+  const computed = useMemo(() => computeQuarters(rows, year), [rows, year]);
 
-  // Q2 ends June 30 of the chosen year (end-of-day local time).
-  const q2End = new Date(year, 5, 30, 23, 59, 59);
-  const q2InProgress = today <= q2End;
+  // The open quarter is the one containing `today`, but only when the selected
+  // year IS the current year (past years are all final; future years have no
+  // data). Quarters are 0-indexed here: Q1 = 0 … Q4 = 3.
+  const currentQ = year === today.getFullYear() ? Math.floor(today.getMonth() / 3) : -1;
 
-  const title = `Q1 vs Q2 — ${year}`;
+  // Which quarters to render: any with revenue, plus the open quarter (so it
+  // shows even before the first deposit of the quarter lands).
+  const hasData = (qi: number) => computed.some((r) => r.quarters[qi] > 0);
+  const visibleQ = [0, 1, 2, 3].filter((qi) => hasData(qi) || qi === currentQ);
+  const inProgress = currentQ >= 0 && visibleQ.includes(currentQ);
+
+  const title = `Quarterly revenue — ${year}`;
   const subtitle = 'Received revenue per location (Bank Deposit).';
 
-  if (!loading && quarters.length === 0) {
+  const locations = useMemo(
+    () =>
+      computed
+        .filter((r) => visibleQ.some((qi) => r.quarters[qi] > 0))
+        .sort(
+          (a, b) =>
+            Math.max(...visibleQ.map((qi) => b.quarters[qi])) -
+            Math.max(...visibleQ.map((qi) => a.quarters[qi])),
+        ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [computed, visibleQ.join(',')],
+  );
+
+  if (!loading && (locations.length === 0 || visibleQ.length === 0)) {
     return (
       <PanelCard title={title} subtitle={subtitle}>
         <div className="grid h-32 place-items-center rounded-lg bg-slate-50 px-4 text-center text-sm text-slate-500">
-          No Q1 or Q2 {year} activity in this date range.
+          No quarterly {year} activity in this date range.
         </div>
       </PanelCard>
     );
   }
 
-  const visible = showAll ? quarters : quarters.slice(0, TOP_N);
-  const hidden = quarters.slice(TOP_N);
-  const max = Math.max(1, ...visible.map((r) => Math.max(r.q1, r.q2)));
+  const visible = showAll ? locations : locations.slice(0, TOP_N);
+  const hidden = locations.slice(TOP_N);
+  const max = Math.max(1, ...visible.flatMap((r) => visibleQ.map((qi) => r.quarters[qi])));
 
-  const totalQ1 = quarters.reduce((a, r) => a + r.q1, 0);
-  const totalQ2 = quarters.reduce((a, r) => a + r.q2, 0);
-  // Suppress % delta while Q2 is open: comparing a finished quarter against a
-  // half-finished one would read as a huge "drop" that's really just elapsed
-  // time, not performance. Per-row chips also gate on q2InProgress below.
-  const deltaPct =
-    q2InProgress || totalQ1 === 0 ? null : ((totalQ2 - totalQ1) / totalQ1) * 100;
-
-  const source = buildSource(totalQ1, totalQ2, deltaPct, q2InProgress);
+  const quarterTotals = visibleQ.map((qi) => computed.reduce((a, r) => a + r.quarters[qi], 0));
+  const source = buildSource(visibleQ, quarterTotals, currentQ);
 
   return (
     <PanelCard
       title={title}
       subtitle={subtitle}
       right={
-        q2InProgress ? (
-          <StatusChip tone="amber">Q2 in progress</StatusChip>
+        inProgress ? (
+          <StatusChip tone="amber">Q{currentQ + 1} in progress</StatusChip>
         ) : (
-          <StatusChip tone="slate">Q1 & Q2 final</StatusChip>
+          <StatusChip tone="slate">
+            {visibleQ.length === 1
+              ? `Q${visibleQ[0] + 1} final`
+              : `Q${visibleQ[0] + 1}–Q${visibleQ[visibleQ.length - 1] + 1} final`}
+          </StatusChip>
         )
       }
       source={source}
@@ -91,7 +112,8 @@ export function QuarterPair({
                 key={r.locationName}
                 row={r}
                 max={max}
-                q2InProgress={q2InProgress}
+                visibleQ={visibleQ}
+                currentQ={inProgress ? currentQ : -1}
               />
             ))}
       </ul>
@@ -102,13 +124,11 @@ export function QuarterPair({
             <p className="text-xs text-slate-500">
               +{hidden.length} more location{hidden.length === 1 ? '' : 's'} —{' '}
               <span className="tabular-nums text-slate-700">
-                {formatNairaCompact(hidden.reduce((a, r) => a + r.q1, 0))}
+                {formatNairaCompact(
+                  hidden.reduce((a, r) => a + visibleQ.reduce((s, qi) => s + r.quarters[qi], 0), 0),
+                )}
               </span>{' '}
-              Q1 /{' '}
-              <span className="tabular-nums text-slate-700">
-                {formatNairaCompact(hidden.reduce((a, r) => a + r.q2, 0))}
-              </span>{' '}
-              Q2 combined.
+              combined across {visibleQ.length === 1 ? 'the quarter' : 'these quarters'}.
             </p>
           )}
           <button
@@ -116,7 +136,7 @@ export function QuarterPair({
             onClick={() => setShowAll((s) => !s)}
             className="mt-2 inline-flex items-center text-xs font-semibold text-accent hover:text-accent-hover focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-1 rounded cursor-pointer"
           >
-            {showAll ? 'Show fewer' : `Show all ${quarters.length}`}
+            {showAll ? 'Show fewer' : `Show all ${locations.length}`}
           </button>
         </div>
       )}
@@ -127,48 +147,30 @@ export function QuarterPair({
 function QuarterRowView({
   row,
   max,
-  q2InProgress,
+  visibleQ,
+  currentQ,
 }: {
   row: QuarterRow;
   max: number;
-  q2InProgress: boolean;
+  visibleQ: number[];
+  currentQ: number;
 }) {
-  const q1Pct = (row.q1 / max) * 100;
-  const q2Pct = (row.q2 / max) * 100;
-  // See note in parent: % comparison is suppressed while Q2 is still open.
-  const deltaPct =
-    q2InProgress || row.q1 === 0 ? null : ((row.q2 - row.q1) / row.q1) * 100;
-
   return (
     <li>
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-sm font-medium text-slate-900">{row.locationName}</span>
-        {deltaPct !== null && (
-          <span
-            className={[
-              'text-[11px] uppercase tracking-wide tabular-nums',
-              deltaPct >= 0 ? 'text-emerald-700' : 'text-slate-500',
-            ].join(' ')}
-          >
-            {deltaPct >= 0 ? '+' : ''}
-            {deltaPct.toFixed(0)}% vs Q1
-          </span>
-        )}
       </div>
       <div className="mt-2 space-y-1.5">
-        <Bar
-          label="Q1"
-          color={COLOR_Q1}
-          pct={q1Pct}
-          amount={formatNairaCompact(row.q1)}
-        />
-        <Bar
-          label="Q2"
-          labelSuffix={q2InProgress ? 'in-progress' : undefined}
-          color={COLOR_Q2}
-          pct={q2Pct}
-          amount={formatNairaCompact(row.q2)}
-        />
+        {visibleQ.map((qi) => (
+          <Bar
+            key={qi}
+            label={`Q${qi + 1}`}
+            labelSuffix={qi === currentQ ? 'in-progress' : undefined}
+            color={QUARTER_COLORS[qi]}
+            pct={(row.quarters[qi] / max) * 100}
+            amount={formatNairaCompact(row.quarters[qi])}
+          />
+        ))}
       </div>
     </li>
   );
@@ -212,34 +214,21 @@ function Bar({
 
 function computeQuarters(rows: RevenueByLocationRow[], year: number): QuarterRow[] {
   const yearStr = String(year);
-  return rows
-    .map((r) => {
-      let q1 = 0;
-      let q2 = 0;
-      for (const m of r.monthly) {
-        if (m.month.slice(0, 4) !== yearStr) continue;
-        const mNum = Number(m.month.slice(5, 7));
-        if (mNum <= 3) q1 += m.received;
-        else if (mNum <= 6) q2 += m.received;
-      }
-      return { locationName: r.locationName, q1, q2 };
-    })
-    .filter((r) => r.q1 > 0 || r.q2 > 0)
-    .sort((a, b) => Math.max(b.q1, b.q2) - Math.max(a.q1, a.q2));
+  return rows.map((r) => {
+    const quarters = [0, 0, 0, 0];
+    for (const m of r.monthly) {
+      if (m.month.slice(0, 4) !== yearStr) continue;
+      const mNum = Number(m.month.slice(5, 7)); // 1..12
+      quarters[Math.floor((mNum - 1) / 3)] += m.received; // 0..3
+    }
+    return { locationName: r.locationName, quarters };
+  });
 }
 
-function buildSource(
-  q1: number,
-  q2: number,
-  deltaPct: number | null,
-  q2InProgress: boolean,
-): string {
-  const totals = `Q1 ${formatNairaCompact(q1)} · Q2 ${formatNairaCompact(q2)}${
-    q2InProgress ? ' (partial)' : ''
-  }`;
-  if (deltaPct === null) {
-    return `Bank Deposit. ${totals}.`;
-  }
-  const sign = deltaPct >= 0 ? '+' : '';
-  return `Bank Deposit. ${totals} — ${sign}${deltaPct.toFixed(1)}% overall.`;
+function buildSource(visibleQ: number[], totals: number[], currentQ: number): string {
+  const parts = visibleQ.map(
+    (qi, i) =>
+      `Q${qi + 1} ${formatNairaCompact(totals[i])}${qi === currentQ ? ' (partial)' : ''}`,
+  );
+  return `Bank Deposit. ${parts.join(' · ')}.`;
 }
